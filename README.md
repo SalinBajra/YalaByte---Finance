@@ -9,4 +9,8 @@ npm install
 npm run dev
 ```
 
-Data currently persists in the browser through local storage. Production authentication, shared CRM data, and the finance API will be added before live financial records are entered.
+Copy `.env.example` to `.env` and add the shared Supabase project credentials. Run `supabase/schema.sql` once in the Supabase SQL editor.
+
+Finance accepts only authenticated `@yalabyte.com` users whose shared profile role is `admin` or `finance`. CRM must use the same Supabase project and perform role assignment through a protected server endpoint. Never expose the Supabase service-role key in a browser app.
+
+Transactions are stored in the shared Supabase `finance_transactions` table and protected by row-level security.

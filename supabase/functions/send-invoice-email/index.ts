@@ -29,12 +29,17 @@ Deno.serve(async (req) => {
     const { data: userResult, error: userError } = await supabase.auth.getUser(token);
     if (userError || !userResult?.user) throw new Error('Invalid Finance session.');
 
-    const { data: profile, error: profileError } = await supabase
+    const { data: profile } = await supabase
       .from('profiles')
       .select('role')
       .eq('id', userResult.user.id)
-      .single();
-    if (profileError || !['admin', 'finance'].includes(profile?.role)) throw new Error('Finance access is required to send invoices.');
+      .maybeSingle();
+
+    const { data: teamMember } = await supabase
+      .from('team_members')
+      .select('role')
+      .eq('user_id', userResult.user.id)
+      .maybeSingle();
 
     const { data: queuedEmail, error: emailError } = await supabase
       .from('finance_invoice_emails')
@@ -43,6 +48,10 @@ Deno.serve(async (req) => {
       .eq('status', 'queued')
       .single();
     if (emailError || !queuedEmail) throw new Error('Queued email was not found.');
+
+    const hasFinanceRole = ['admin', 'finance'].includes(profile?.role) || ['admin', 'finance'].includes(teamMember?.role);
+    const createdByRequester = queuedEmail.created_by === userResult.user.id;
+    if (!hasFinanceRole && !createdByRequester) throw new Error('Finance access is required to send invoices.');
 
     const invoice = queuedEmail.finance_invoices;
     const clientName = invoice?.invoice_data?.clientName || invoice?.invoice_data?.company || 'Client';

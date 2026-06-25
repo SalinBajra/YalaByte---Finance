@@ -159,6 +159,8 @@ create table if not exists public.finance_invoice_emails (
   cc_email text not null default '',
   subject text not null,
   body text not null,
+  attachment_filename text not null default '',
+  attachment_base64 text not null default '',
   status text not null default 'queued' check (status in ('queued', 'sent', 'failed', 'cancelled')),
   created_by uuid not null references public.profiles(id),
   created_at timestamptz not null default now(),

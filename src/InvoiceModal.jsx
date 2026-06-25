@@ -41,7 +41,11 @@ async function loadLogo() {
   });
 }
 
-async function downloadInvoicePdf(invoice) {
+function invoicePdfFilename(invoice) {
+  return `${invoice.invoiceNumber}-${(invoice.company || invoice.clientName || 'client').replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.pdf`;
+}
+
+async function buildInvoicePdf(invoice) {
   const { jsPDF } = await import('jspdf');
   const pdf = new jsPDF({ unit: 'mm', format: 'a4' });
   const navy = [6, 24, 40];
@@ -203,7 +207,20 @@ async function downloadInvoicePdf(invoice) {
   pdf.setTextColor(...cyan);
   pdf.text('Crafted for clarity. Built for growth.', 15, 291);
 
-  pdf.save(`${invoice.invoiceNumber}-${(invoice.company || invoice.clientName || 'client').replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.pdf`);
+  return pdf;
+}
+
+async function downloadInvoicePdf(invoice) {
+  const pdf = await buildInvoicePdf(invoice);
+  pdf.save(invoicePdfFilename(invoice));
+}
+
+export async function generateInvoicePdfAttachment(invoice) {
+  const pdf = await buildInvoicePdf(invoice);
+  return {
+    filename: invoicePdfFilename(invoice),
+    base64: pdf.output('datauristring').split(',')[1]
+  };
 }
 
 export default function InvoiceModal({ lead, invoice: existingInvoice, currentUser, onClose, onSaved }) {

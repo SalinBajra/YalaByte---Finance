@@ -54,17 +54,15 @@ Deno.serve(async (req) => {
     const createdByRequester = queuedEmail.created_by === userResult.user.id;
     if (!hasFinanceRole && !createdByRequester) throw new Error('Finance access is required to send invoices.');
 
-    const invoice = queuedEmail.finance_invoices;
-    const clientName = invoice?.invoice_data?.clientName || invoice?.invoice_data?.company || 'Client';
-    const html = `
-      <p>Hello ${clientName},</p>
-      <p>Please find your YalaByte invoice details below.</p>
-      <p><strong>Invoice:</strong> ${invoice?.invoice_number || queuedEmail.subject}<br>
-      <strong>Amount due:</strong> ${money(Number(invoice?.amount_due_npr || 0))}<br>
-      <strong>Due date:</strong> ${invoice?.due_date || 'Not set'}</p>
-      <p>${queuedEmail.body.replace(/\n/g, '<br>')}</p>
-      <p>Regards,<br>YalaByte Finance</p>
-    `;
+    const html = `<p>${queuedEmail.body.replace(/\n\n/g, '</p><p>').replace(/\n/g, '<br>')}</p>`;
+    const attachments = queuedEmail.attachment_base64
+      ? [{
+          filename: queuedEmail.attachment_filename || `${queuedEmail.finance_invoices?.invoice_number || 'YalaByte-invoice'}.pdf`,
+          content: queuedEmail.attachment_base64,
+          encoding: 'base64',
+          contentType: 'application/pdf',
+        }]
+      : [];
 
     const transporter = nodemailer.createTransport({
       host: Deno.env.get('ZOHO_SMTP_HOST') || 'smtp.zoho.com',
@@ -80,6 +78,7 @@ Deno.serve(async (req) => {
       subject: queuedEmail.subject,
       text: queuedEmail.body,
       html,
+      attachments,
     });
 
     await supabase

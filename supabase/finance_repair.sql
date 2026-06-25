@@ -98,6 +98,10 @@ create table if not exists public.finance_invoice_emails (
 );
 
 alter table public.finance_invoice_emails
+  add column if not exists attachment_filename text not null default '',
+  add column if not exists attachment_base64 text not null default '';
+
+alter table public.finance_invoice_emails
   drop constraint if exists finance_invoice_emails_status_check,
   add constraint finance_invoice_emails_status_check
     check (status in ('queued', 'sent', 'failed', 'cancelled'));

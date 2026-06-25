@@ -333,7 +333,7 @@ export default function FinanceApp({ profile, signOut }) {
     }
     const ownerEmail = deals.find((deal) => deal.id === invoiceRow.deal_id || deal.crmLeadId === invoiceRow.crm_lead_id)?.ownerEmail || invoiceRow.invoice_data?.ownerEmail || '';
     const subject = `YalaByte invoice ${invoiceRow.invoice_number}`;
-    const body = `Hello ${invoiceRow.invoice_data?.clientName || invoiceClientName(invoiceRow)},\n\nPlease find attached your YalaByte invoice ${invoiceRow.invoice_number}.\n\nAmount due: ${money(Number(invoiceRow.amount_due_npr || 0))}\nDue date: ${invoiceRow.due_date ? date(invoiceRow.due_date) : 'Not set'}\n\nRegards,\nYalaByte Finance`;
+    const body = `Hello ${invoiceRow.invoice_data?.clientName || invoiceClientName(invoiceRow)},\n\nPlease find attached your YalaByte invoice ${invoiceRow.invoice_number}.\n\nAmount due: ${money(Number(invoiceRow.amount_due_npr || 0))}\nDue date: ${invoiceRow.due_date ? date(invoiceRow.due_date) : 'Not set'}`;
     const attachment = await generateInvoicePdfAttachment(invoiceRow.invoice_data);
     const emailRecord = { invoice_id: invoiceRow.id, to_email: toEmail, cc_email: ownerEmail, subject, body, attachment_filename: attachment.filename, attachment_base64: attachment.base64, created_by: profile.id };
     const { data, error } = await supabase.from('finance_invoice_emails').insert(emailRecord).select().single();

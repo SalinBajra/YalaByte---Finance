@@ -54,7 +54,26 @@ Deno.serve(async (req) => {
     const createdByRequester = queuedEmail.created_by === userResult.user.id;
     if (!hasFinanceRole && !createdByRequester) throw new Error('Finance access is required to send invoices.');
 
-    const html = `<p>${queuedEmail.body.replace(/\n\n/g, '</p><p>').replace(/\n/g, '<br>')}</p>`;
+    const bodyHtml = `<p>${queuedEmail.body.replace(/\n\n/g, '</p><p>').replace(/\n/g, '<br>')}</p>`;
+    const signatureText = '\n\nRegards,\nYalaByte Finance\ninfo@yalabyte.com | www.yalabyte.com';
+    const html = `
+      ${bodyHtml}
+      <div style="margin-top:24px;padding-top:18px;border-top:1px solid #e2e8f0;font-family:Arial,sans-serif;">
+        <p style="margin:0 0 10px;color:#0f172a;font-size:14px;line-height:20px;">Regards,<br><strong>YalaByte Finance</strong></p>
+        <table role="presentation" cellspacing="0" cellpadding="0" style="border-collapse:collapse;">
+          <tr>
+            <td style="width:42px;height:42px;border-radius:12px;background:#061828;text-align:center;vertical-align:middle;">
+              <span style="display:inline-block;color:#13c8de;font-size:18px;font-weight:800;letter-spacing:-1px;">YB</span>
+            </td>
+            <td style="padding-left:12px;vertical-align:middle;">
+              <div style="color:#061828;font-size:18px;font-weight:800;line-height:20px;">YalaByte</div>
+              <div style="color:#0891a6;font-size:10px;font-weight:800;letter-spacing:2px;text-transform:uppercase;">Finance</div>
+            </td>
+          </tr>
+        </table>
+        <p style="margin:10px 0 0;color:#64748b;font-size:12px;line-height:18px;">info@yalabyte.com | www.yalabyte.com</p>
+      </div>
+    `;
     const attachments = queuedEmail.attachment_base64
       ? [{
           filename: queuedEmail.attachment_filename || `${queuedEmail.finance_invoices?.invoice_number || 'YalaByte-invoice'}.pdf`,
@@ -76,7 +95,7 @@ Deno.serve(async (req) => {
       to: queuedEmail.to_email,
       cc: queuedEmail.cc_email || undefined,
       subject: queuedEmail.subject,
-      text: queuedEmail.body,
+      text: `${queuedEmail.body}${signatureText}`,
       html,
       attachments,
     });

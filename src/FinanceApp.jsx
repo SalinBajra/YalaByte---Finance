@@ -6,6 +6,7 @@ import { supabase } from './lib/supabase';
 const nav = ['Overview', 'Transactions', 'Invoices', 'Expenses', 'Payroll', 'Reports'];
 const money = (value) => `Rs ${new Intl.NumberFormat('en-NP', { maximumFractionDigits: 0 }).format(value)}`;
 const date = (value) => new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(value));
+const dateTime = (value) => new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }).format(new Date(value));
 
 function Icon({ name, active = false }) {
   const icons = { Overview: '⌂', Transactions: '↔', Invoices: '▤', Expenses: '↓', Payroll: '◉', Reports: '⌁' };
@@ -37,6 +38,16 @@ const eventLabel = {
   payment_pending: 'Payment pending',
   cancelled: 'Cancelled',
   email_queued: 'Email queued'
+};
+
+const paymentMethodLabels = {
+  bank_transfer: 'Bank transfer',
+  cash: 'Cash',
+  cheque: 'Cheque',
+  esewa: 'eSewa',
+  khalti: 'Khalti',
+  card: 'Card',
+  other: 'Other'
 };
 
 async function functionErrorMessage(error) {
@@ -207,14 +218,46 @@ function Transactions({ rows, onAdd, error }) {
   return <><h1 className="text-3xl font-semibold tracking-tight text-ink">Transactions</h1><p className="mt-2 text-slate-500">Record and review every movement of money in Nepali rupees.</p><form onSubmit={submit} className="mt-7 grid gap-3 rounded-2xl border border-slate-200 bg-white p-5 md:grid-cols-2 xl:grid-cols-6">{[['description','Description'],['party','Vendor or client'],['category','Category'],['amount','Amount (Rs)']].map(([key,label]) => <label key={key} className="text-xs font-bold uppercase tracking-wider text-slate-500">{label}<input type={key === 'amount' ? 'number' : 'text'} min={key === 'amount' ? '0' : undefined} value={form[key]} onChange={e=>setForm({...form,[key]:e.target.value})} className="mt-2 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-medium normal-case tracking-normal outline-none focus:border-cyanbrand-500"/></label>)}<label className="text-xs font-bold uppercase tracking-wider text-slate-500">Type<select value={form.type} onChange={e=>setForm({...form,type:e.target.value})} className="mt-2 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm normal-case"><option value="expense">Expense</option><option value="income">Income</option></select></label><button disabled={saving} className="self-end rounded-xl bg-cyanbrand-500 px-4 py-3 text-sm font-bold text-ink disabled:opacity-60">{saving ? 'Saving…' : 'Add entry'}</button></form>{error && <p className="mt-4 rounded-xl bg-red-50 p-3 text-sm font-medium text-red-700">{error}</p>}<div className="mt-5 rounded-2xl border border-slate-200 bg-white">{rows.length ? <TransactionTable rows={rows}/> : <p className="p-8 text-center text-sm text-slate-500">No transactions yet. Add the first entry above.</p>}</div></>;
 }
 
-function Invoices({ deals, invoices, events, onCreate, onEdit, onPaymentReceived, onPaymentPending, onCancel, onQueueEmail, error }) {
+function Invoices({ deals, invoices, events, payments, onCreate, onEdit, onPaymentReceived, onPaymentPending, onCancel, onQueueEmail, error }) {
   const billableDealIds = new Set(invoices.filter((invoice) => invoice.status !== 'cancelled').map((invoice) => invoice.deal_id));
   const closedDealIds = new Set(invoices.filter((invoice) => invoice.status === 'paid' || invoice.status === 'cancelled').map((invoice) => invoice.deal_id));
   const readyDeals = deals.filter((deal) => !closedDealIds.has(deal.id) && !billableDealIds.has(deal.id) && ['ready_to_invoice', 'invoicing'].includes(deal.status));
   const openInvoices = invoices.filter((invoice) => invoice.status !== 'paid' && invoice.status !== 'cancelled');
   const paidInvoices = invoices.filter((invoice) => invoice.status === 'paid');
   const cancelledInvoices = invoices.filter((invoice) => invoice.status === 'cancelled');
-  return <><div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-sm font-semibold text-cyanbrand-600">Billing command center</p><h1 className="mt-1 text-3xl font-semibold tracking-tight text-ink">Invoices</h1><p className="mt-2 text-slate-500">Create invoices from won CRM deals and manage billing from Finance.</p></div></div>{error && <p className="mt-4 rounded-xl bg-red-50 p-3 text-sm font-medium text-red-700">{error}</p>}<section className="mt-7 grid gap-4 md:grid-cols-3"><Metric label="Ready deals" value={readyDeals.length} note="Waiting for invoice"/><Metric label="Open receivables" value={money(openInvoices.reduce((sum, invoice) => sum + invoiceBalance(invoice), 0))} note={`${openInvoices.length} unpaid invoices`} tone="text-amber-600"/><Metric label="Paid invoices" value={paidInvoices.length} note={`${cancelledInvoices.length} cancelled in history`} tone="text-emerald-600"/></section><section className="mt-5 grid gap-5 xl:grid-cols-[0.95fr_1.05fr]"><div className={panelClass}><div className="border-b border-slate-100 p-5"><h2 className="font-semibold text-ink">Ready to invoice</h2><p className="mt-1 text-sm text-slate-500">Won CRM leads that do not already have an invoice.</p></div><div className="divide-y divide-slate-100">{readyDeals.length ? readyDeals.map((deal) => <article className="p-5 transition hover:bg-slate-50/70" key={deal.id}><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><p className="text-xs font-bold text-cyanbrand-600">{deal.service || 'Won deal'}</p><h3 className="mt-1 font-semibold text-ink">{deal.name}</h3><p className="mt-1 text-sm text-slate-500">{deal.company || deal.email || 'CRM handoff'}{deal.owner ? ` · ${deal.owner}` : ''}</p><p className="mt-2 text-lg font-bold text-ink">{money(deal.value)}</p></div><button className={primaryButton} onClick={() => onCreate(deal)} type="button">Create invoice</button></div></article>) : <EmptyState title="Ready queue is clear" note="Paid, cancelled, and already invoiced deals stay out of this list." />}</div></div><div className={panelClass}><div className="border-b border-slate-100 p-5"><h2 className="font-semibold text-ink">Invoice history</h2><p className="mt-1 text-sm text-slate-500">Payment and cancellation controls are recorded in audit history.</p></div><div className="divide-y divide-slate-100">{invoices.length ? invoices.map((item) => { const balance = invoiceBalance(item); const paid = Number(item.amount_paid_npr || 0); return <article className="p-5 transition hover:bg-slate-50/70" key={item.id}><div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"><div><p className="text-xs font-bold text-cyanbrand-600">{item.invoice_number}</p><h3 className="mt-1 font-semibold text-ink">{invoiceClientName(item)}</h3><p className="mt-1 text-sm text-slate-500">Due {item.due_date ? date(item.due_date) : 'not set'} · Paid {money(paid)} · Balance {money(balance)}</p></div><div className="flex flex-col items-start gap-2 sm:items-end"><p className="text-lg font-bold text-ink">{money(Number(item.amount_due_npr || 0))}</p><span className={`rounded-full px-3 py-1.5 text-xs font-bold ${invoiceStatusClass[item.status] || invoiceStatusClass.draft}`}>{item.status}</span></div></div><div className="mt-4 flex flex-wrap gap-2"><button className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold text-slate-600 transition hover:bg-slate-50" onClick={() => onEdit(item)} type="button">Edit PDF</button><button className="rounded-lg border border-cyan-200 bg-cyan-50 px-3 py-2 text-xs font-bold text-cyan-700 transition hover:bg-cyan-100 disabled:cursor-not-allowed disabled:opacity-40" disabled={item.status === 'cancelled'} onClick={() => onQueueEmail(item)} type="button">Queue email</button><button className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-bold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-40" disabled={item.status === 'paid' || item.status === 'cancelled'} onClick={() => onPaymentReceived(item)} type="button">Payment received</button><button className="rounded-lg bg-amber-100 px-3 py-2 text-xs font-bold text-amber-800 transition hover:bg-amber-200 disabled:cursor-not-allowed disabled:opacity-40" disabled={item.status === 'cancelled' || item.status === 'paid'} onClick={() => onPaymentPending(item)} type="button">Pending</button><button className="rounded-lg bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-40" disabled={item.status === 'cancelled' || item.status === 'paid'} onClick={() => onCancel(item)} type="button">Cancel invoice</button></div></article>; }) : <EmptyState title="No invoices yet" note="Create the first bill from a won CRM deal." />}</div></div></section><section className={`mt-5 ${panelClass}`}><div className="border-b border-slate-100 p-5"><h2 className="font-semibold text-ink">Invoice audit history</h2><p className="mt-1 text-sm text-slate-500">Created, email, payment, and cancellation actions stay in record.</p></div><div className="divide-y divide-slate-100">{events.length ? events.slice(0, 20).map((event) => <article className="flex flex-col gap-2 p-5 sm:flex-row sm:items-center sm:justify-between" key={event.id}><div><p className="font-semibold text-ink">{eventLabel[event.event_type] || event.event_type} · {event.invoice_number}</p><p className="mt-1 text-sm text-slate-500">{event.client_name} by {event.actor_name || event.actor_email || 'Finance'} on {date(event.created_at)}</p>{event.note ? <p className="mt-1 text-xs font-medium text-slate-400">{event.note}</p> : null}</div><p className="font-bold text-ink">{money(Number(event.amount_npr || 0))}</p></article>) : <EmptyState title="No audit events yet" note="Invoice actions will appear here automatically." />}</div></section></>;
+  const [auditInvoiceId, setAuditInvoiceId] = useState('');
+  const auditInvoices = invoices.filter((invoice) => events.some((event) => event.invoice_id === invoice.id));
+  const selectedAuditEvents = auditInvoiceId ? events.filter((event) => event.invoice_id === auditInvoiceId) : [];
+  return <><div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-sm font-semibold text-cyanbrand-600">Billing command center</p><h1 className="mt-1 text-3xl font-semibold tracking-tight text-ink">Invoices</h1><p className="mt-2 text-slate-500">Create invoices from won CRM deals and manage billing from Finance.</p></div></div>{error && <p className="mt-4 rounded-xl bg-red-50 p-3 text-sm font-medium text-red-700">{error}</p>}<section className="mt-7 grid gap-4 md:grid-cols-3"><Metric label="Ready deals" value={readyDeals.length} note="Waiting for invoice"/><Metric label="Open receivables" value={money(openInvoices.reduce((sum, invoice) => sum + invoiceBalance(invoice), 0))} note={`${openInvoices.length} unpaid invoices`} tone="text-amber-600"/><Metric label="Paid invoices" value={paidInvoices.length} note={`${cancelledInvoices.length} cancelled in history`} tone="text-emerald-600"/></section><section className="mt-5 grid gap-5 xl:grid-cols-[0.95fr_1.05fr]"><div className={panelClass}><div className="border-b border-slate-100 p-5"><h2 className="font-semibold text-ink">Ready to invoice</h2><p className="mt-1 text-sm text-slate-500">Won CRM leads that do not already have an invoice.</p></div><div className="divide-y divide-slate-100">{readyDeals.length ? readyDeals.map((deal) => <article className="p-5 transition hover:bg-slate-50/70" key={deal.id}><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><p className="text-xs font-bold text-cyanbrand-600">{deal.service || 'Won deal'}</p><h3 className="mt-1 font-semibold text-ink">{deal.name}</h3><p className="mt-1 text-sm text-slate-500">{deal.company || deal.email || 'CRM handoff'}{deal.owner ? ` · ${deal.owner}` : ''}</p><p className="mt-2 text-lg font-bold text-ink">{money(deal.value)}</p></div><button className={primaryButton} onClick={() => onCreate(deal)} type="button">Create invoice</button></div></article>) : <EmptyState title="Ready queue is clear" note="Paid, cancelled, and already invoiced deals stay out of this list." />}</div></div><div className={panelClass}><div className="border-b border-slate-100 p-5"><h2 className="font-semibold text-ink">Invoice history</h2><p className="mt-1 text-sm text-slate-500">Payment and cancellation controls are recorded in audit history.</p></div><div className="divide-y divide-slate-100">{invoices.length ? invoices.map((item) => { const balance = invoiceBalance(item); const paid = Number(item.amount_paid_npr || 0); const itemPayments = payments.filter((payment) => payment.invoice_id === item.id); return <article className="p-5 transition hover:bg-slate-50/70" key={item.id}><div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"><div><p className="text-xs font-bold text-cyanbrand-600">{item.invoice_number}</p><h3 className="mt-1 font-semibold text-ink">{invoiceClientName(item)}</h3><p className="mt-1 text-sm text-slate-500">Due {item.due_date ? date(item.due_date) : 'not set'} · Paid {money(paid)} · Balance {money(balance)}</p></div><div className="flex flex-col items-start gap-2 sm:items-end"><p className="text-lg font-bold text-ink">{money(Number(item.amount_due_npr || 0))}</p><span className={`rounded-full px-3 py-1.5 text-xs font-bold ${invoiceStatusClass[item.status] || invoiceStatusClass.draft}`}>{item.status}</span></div></div>{itemPayments.length ? <div className="mt-4 rounded-xl bg-slate-50 p-3"><p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-400">Payment records</p><div className="mt-2 space-y-1">{itemPayments.slice(0, 3).map((payment) => <div className="flex items-center justify-between gap-3 text-xs" key={payment.id}><span className="truncate text-slate-500">{date(payment.received_at)} · {paymentMethodLabels[payment.payment_method] || payment.payment_method}</span><span className="font-bold text-emerald-600">{money(Number(payment.amount_npr || 0))}</span></div>)}</div></div> : null}<div className="mt-4 flex flex-wrap gap-2"><button className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold text-slate-600 transition hover:bg-slate-50" onClick={() => onEdit(item)} type="button">Edit PDF</button><button className="rounded-lg border border-cyan-200 bg-cyan-50 px-3 py-2 text-xs font-bold text-cyan-700 transition hover:bg-cyan-100 disabled:cursor-not-allowed disabled:opacity-40" disabled={item.status === 'cancelled'} onClick={() => onQueueEmail(item)} type="button">Queue email</button><button className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-bold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-40" disabled={item.status === 'paid' || item.status === 'cancelled'} onClick={() => onPaymentReceived(item)} type="button">Record payment</button><button className="rounded-lg bg-amber-100 px-3 py-2 text-xs font-bold text-amber-800 transition hover:bg-amber-200 disabled:cursor-not-allowed disabled:opacity-40" disabled={item.status === 'cancelled' || item.status === 'paid'} onClick={() => onPaymentPending(item)} type="button">Pending</button><button className="rounded-lg bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-40" disabled={item.status === 'cancelled' || item.status === 'paid'} onClick={() => onCancel(item)} type="button">Cancel invoice</button></div></article>; }) : <EmptyState title="No invoices yet" note="Create the first bill from a won CRM deal." />}</div></div></section><section className={`mt-5 ${panelClass}`}><div className="flex flex-col gap-4 border-b border-slate-100 p-5 lg:flex-row lg:items-center lg:justify-between"><div><h2 className="font-semibold text-ink">Invoice audit history</h2><p className="mt-1 text-sm text-slate-500">Choose one invoice to review its exact activity timeline.</p></div><select value={auditInvoiceId} onChange={(event) => setAuditInvoiceId(event.target.value)} className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-semibold text-ink outline-none focus:border-cyanbrand-500 lg:w-80"><option value="">Select invoice number</option>{auditInvoices.map((invoice) => <option key={invoice.id} value={invoice.id}>{invoice.invoice_number} - {invoiceClientName(invoice)}</option>)}</select></div><div className="max-h-[520px] divide-y divide-slate-100 overflow-y-auto">{auditInvoiceId ? selectedAuditEvents.length ? selectedAuditEvents.map((event) => <article className="flex flex-col gap-2 p-5 sm:flex-row sm:items-center sm:justify-between" key={event.id}><div><p className="font-semibold text-ink">{eventLabel[event.event_type] || event.event_type} · {event.invoice_number}</p><p className="mt-1 text-sm text-slate-500">{event.client_name} by {event.actor_name || event.actor_email || 'Finance'} on {dateTime(event.created_at)}</p>{event.note ? <p className="mt-1 text-xs font-medium text-slate-400">{event.note}</p> : null}</div><p className="font-bold text-ink">{money(Number(event.amount_npr || 0))}</p></article>) : <EmptyState title="No events for this invoice" note="New actions will appear here automatically." /> : <EmptyState title="Select an invoice" note="Audit history is grouped by invoice number so multiple bills stay easy to review." />}</div></section></>;
+}
+
+function PaymentModal({ invoice, onClose, onSave }) {
+  const balance = invoiceBalance(invoice);
+  const [form, setForm] = useState({ amount: balance ? String(balance) : '', method: 'bank_transfer', note: '' });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const submit = async (event) => {
+    event.preventDefault();
+    const amount = Number(form.amount);
+    if (!amount || amount <= 0) {
+      setError('Enter a payment amount.');
+      return;
+    }
+    if (amount > balance) {
+      setError(`Payment cannot be more than the balance ${money(balance)}.`);
+      return;
+    }
+    setSaving(true);
+    try {
+      await onSave(invoice, { amount, method: form.method, note: form.note.trim() });
+      onClose();
+    } catch (paymentError) {
+      setError(paymentError.message || 'Payment could not be recorded.');
+    } finally {
+      setSaving(false);
+    }
+  };
+  return <div className="fixed inset-0 z-50 grid place-items-center bg-ink/70 p-4"><form onSubmit={submit} className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl"><div className="flex items-start justify-between gap-4"><div><p className="text-sm font-bold text-cyanbrand-600">Record payment</p><h2 className="mt-1 text-2xl font-semibold text-ink">{invoice.invoice_number}</h2><p className="mt-1 text-sm text-slate-500">{invoiceClientName(invoice)} · Balance {money(balance)}</p></div><button type="button" onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold text-slate-500 hover:bg-slate-50">Close</button></div>{error ? <p className="mt-4 rounded-xl bg-red-50 p-3 text-sm font-medium text-red-700">{error}</p> : null}<div className="mt-5 grid gap-4 sm:grid-cols-2"><label className="text-xs font-bold uppercase tracking-wider text-slate-500">Amount received<input type="number" min="1" max={balance} value={form.amount} onChange={(event) => setForm({ ...form, amount: event.target.value })} className="mt-2 w-full rounded-xl border border-slate-200 px-3 py-3 text-sm font-semibold normal-case tracking-normal outline-none focus:border-cyanbrand-500" /></label><label className="text-xs font-bold uppercase tracking-wider text-slate-500">Payment method<select value={form.method} onChange={(event) => setForm({ ...form, method: event.target.value })} className="mt-2 w-full rounded-xl border border-slate-200 px-3 py-3 text-sm font-semibold normal-case tracking-normal outline-none focus:border-cyanbrand-500">{Object.entries(paymentMethodLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label className="text-xs font-bold uppercase tracking-wider text-slate-500 sm:col-span-2">Internal note<textarea rows="3" value={form.note} onChange={(event) => setForm({ ...form, note: event.target.value })} className="mt-2 w-full rounded-xl border border-slate-200 px-3 py-3 text-sm font-medium normal-case tracking-normal outline-none focus:border-cyanbrand-500" placeholder="Receipt reference, bank account, or payment detail" /></label></div><div className="mt-6 flex justify-end gap-3"><button type="button" onClick={onClose} className="rounded-xl border border-slate-200 px-4 py-3 text-sm font-bold text-slate-600 hover:bg-slate-50">Cancel</button><button type="submit" disabled={saving} className={primaryButton}>{saving ? 'Recording...' : 'Record payment'}</button></div></form></div>;
 }
 
 function Expenses({ rows, onAdd, error }) {
@@ -267,8 +310,10 @@ export default function FinanceApp({ profile, signOut }) {
   const [deals, setDeals] = useState([]);
   const [invoices, setInvoices] = useState([]);
   const [invoiceEvents, setInvoiceEvents] = useState([]);
+  const [invoicePayments, setInvoicePayments] = useState([]);
   const [teamMembers, setTeamMembers] = useState([]);
   const [invoiceModal, setInvoiceModal] = useState(null);
+  const [paymentModal, setPaymentModal] = useState(null);
   const [dataError, setDataError] = useState('');
   useEffect(() => {
     supabase.from('finance_transactions').select('*').order('transaction_date', { ascending: false }).order('created_at', { ascending: false }).then(({ data, error }) => {
@@ -279,15 +324,17 @@ export default function FinanceApp({ profile, signOut }) {
       supabase.from('finance_deals').select('*').order('won_at', { ascending: false }),
       supabase.from('finance_invoices').select('*').order('created_at', { ascending: false }),
       supabase.from('finance_invoice_events').select('*').order('created_at', { ascending: false }),
+      supabase.from('finance_invoice_payments').select('*').order('received_at', { ascending: false }),
       supabase.from('team_members').select('user_id, name, email, role').order('name', { ascending: true })
-    ]).then(([dealResult, invoiceResult, eventResult, teamResult]) => {
-      if (dealResult.error || invoiceResult.error || eventResult.error || teamResult.error) {
-        setDataError(dealResult.error?.message || invoiceResult.error?.message || eventResult.error?.message || teamResult.error?.message);
+    ]).then(([dealResult, invoiceResult, eventResult, paymentResult, teamResult]) => {
+      if (dealResult.error || invoiceResult.error || eventResult.error || paymentResult.error || teamResult.error) {
+        setDataError(dealResult.error?.message || invoiceResult.error?.message || eventResult.error?.message || paymentResult.error?.message || teamResult.error?.message);
         return;
       }
       setDeals((dealResult.data || []).map(mapFinanceDeal));
       setInvoices(invoiceResult.data || []);
       setInvoiceEvents(eventResult.data || []);
+      setInvoicePayments(paymentResult.data || []);
       setTeamMembers(teamResult.data || []);
     });
     const channel = supabase
@@ -316,6 +363,12 @@ export default function FinanceApp({ profile, signOut }) {
         setInvoiceEvents((current) => {
           if (payload.eventType === 'DELETE') return current.filter((event) => event.id !== payload.old?.id);
           return [payload.new, ...current.filter((event) => event.id !== payload.new.id)].sort((left, right) => new Date(right.created_at || 0) - new Date(left.created_at || 0));
+        });
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'finance_invoice_payments' }, (payload) => {
+        setInvoicePayments((current) => {
+          if (payload.eventType === 'DELETE') return current.filter((payment) => payment.id !== payload.old?.id);
+          return [payload.new, ...current.filter((payment) => payment.id !== payload.new.id)].sort((left, right) => new Date(right.received_at || 0) - new Date(left.received_at || 0));
         });
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'team_members' }, (payload) => {
@@ -416,14 +469,31 @@ export default function FinanceApp({ profile, signOut }) {
     setInvoices((current) => [data, ...current.filter((item) => item.id !== data.id)]);
     return data;
   };
-  const markPaymentReceived = async (invoiceRow) => {
+  const recordInvoicePayment = async (invoiceRow, payment) => {
     setDataError('');
-    const amount = invoiceBalance(invoiceRow) || Number(invoiceRow.amount_due_npr || 0);
-    const updatedInvoice = await updateInvoiceRecord(invoiceRow, { status: 'paid', amount_paid_npr: amount, balance_due_npr: 0 });
-    await auditInvoice(updatedInvoice, 'payment_received', 'Payment recorded from invoice controls.', amount);
+    const amount = Number(payment.amount || 0);
+    const previousPaid = Number(invoiceRow.amount_paid_npr || 0);
+    const totalDue = Number(invoiceRow.amount_due_npr || 0);
+    const nextPaid = Math.min(previousPaid + amount, totalDue);
+    const nextBalance = Math.max(totalDue - nextPaid, 0);
+    const updatedInvoice = await updateInvoiceRecord(invoiceRow, { status: nextBalance <= 0 ? 'paid' : 'issued', amount_paid_npr: nextPaid, balance_due_npr: nextBalance });
+    const { data: paymentRow, error: paymentError } = await supabase.from('finance_invoice_payments').insert({
+      invoice_id: invoiceRow.id,
+      amount_npr: amount,
+      payment_method: payment.method,
+      note: payment.note,
+      received_by: activeProfile.id
+    }).select().single();
+    if (paymentError) {
+      setDataError(paymentError.message);
+      throw paymentError;
+    }
+    setInvoicePayments((current) => [paymentRow, ...current.filter((item) => item.id !== paymentRow.id)]);
+    await auditInvoice(updatedInvoice, 'payment_received', `${nextBalance <= 0 ? 'Full' : 'Partial'} payment recorded${payment.note ? `: ${payment.note}` : '.'}`, amount, { payment_id: paymentRow.id, method: payment.method, balance_due_npr: nextBalance });
     const deal = deals.find((item) => item.id === invoiceRow.deal_id);
-    if (deal) await supabase.from('finance_deals').update({ status: 'paid', updated_at: new Date().toISOString() }).eq('id', deal.id);
-    if (deal) setDeals((current) => current.map((item) => item.id === deal.id ? { ...item, status: 'paid' } : item));
+    const nextDealStatus = nextBalance <= 0 ? 'paid' : 'invoicing';
+    if (deal) await supabase.from('finance_deals').update({ status: nextDealStatus, updated_at: new Date().toISOString() }).eq('id', deal.id);
+    if (deal) setDeals((current) => current.map((item) => item.id === deal.id ? { ...item, status: nextDealStatus } : item));
     const transaction = {
       transaction_date: new Date().toISOString().slice(0, 10),
       description: `Payment received - ${invoiceRow.invoice_number}`,
@@ -444,8 +514,10 @@ export default function FinanceApp({ profile, signOut }) {
   const markPaymentPending = async (invoiceRow) => {
     setDataError('');
     const amount = Number(invoiceRow.amount_due_npr || 0);
-    const updatedInvoice = await updateInvoiceRecord(invoiceRow, { status: 'issued', amount_paid_npr: 0, balance_due_npr: amount });
-    await auditInvoice(updatedInvoice, 'payment_pending', 'Payment marked as pending.', amount);
+    const paid = Number(invoiceRow.amount_paid_npr || 0);
+    const balance = Math.max(amount - paid, 0);
+    const updatedInvoice = await updateInvoiceRecord(invoiceRow, { status: balance <= 0 ? 'paid' : 'issued', amount_paid_npr: paid, balance_due_npr: balance });
+    await auditInvoice(updatedInvoice, 'payment_pending', 'Payment marked as pending.', balance);
     const deal = deals.find((item) => item.id === invoiceRow.deal_id);
     if (deal) {
       const { error } = await supabase.from('finance_deals').update({ status: 'invoicing', updated_at: new Date().toISOString() }).eq('id', deal.id);

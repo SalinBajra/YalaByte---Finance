@@ -45,9 +45,10 @@ Deno.serve(async (req) => {
       .from('finance_invoice_emails')
       .select('*, finance_invoices(invoice_number, amount_due_npr, due_date, invoice_data)')
       .eq('id', emailId)
-      .eq('status', 'queued')
-      .single();
-    if (emailError || !queuedEmail) throw new Error('Queued email was not found.');
+      .maybeSingle();
+    if (emailError) throw new Error(`Queued email lookup failed: ${emailError.message}`);
+    if (!queuedEmail) throw new Error(`Queued email was not found for id ${emailId}.`);
+    if (queuedEmail.status !== 'queued') throw new Error(`Queued email is already ${queuedEmail.status}.`);
 
     const hasFinanceRole = ['admin', 'finance'].includes(profile?.role) || ['admin', 'finance'].includes(teamMember?.role);
     const createdByRequester = queuedEmail.created_by === userResult.user.id;

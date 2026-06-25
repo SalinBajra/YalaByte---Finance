@@ -15,15 +15,59 @@ function Metric({ label, value, note, tone = 'text-ink' }) {
   return <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-400">{label}</p><p className={`mt-3 text-3xl font-semibold tracking-tight ${tone}`}>{value}</p><p className="mt-2 text-sm text-slate-500">{note}</p></article>;
 }
 
+function mapTransaction(item) {
+  return { id: item.id, date: item.transaction_date, description: item.description, party: item.party, category: item.category, type: item.transaction_type, amount: Number(item.amount_npr), status: item.status[0].toUpperCase() + item.status.slice(1) };
+}
+
+function mapFinanceDeal(item) {
+  return { id: item.id, crmLeadId: item.crm_lead_id, name: item.client_name, company: item.company, email: item.email, phone: item.phone, service: item.service, value: Number(item.deal_value_npr || 0), owner: item.owner_name, ownerEmail: item.owner_email, status: item.status, wonAt: item.won_at, invoices: [] };
+}
+
+const monthKey = (value) => new Date(value).toISOString().slice(0, 7);
+const invoiceClientName = (invoice) => invoice.invoice_data?.company || invoice.invoice_data?.clientName || 'Client';
+const invoiceBalance = (invoice) => {
+  if (invoice.status === 'paid' || invoice.status === 'cancelled') return 0;
+  return Number(invoice.balance_due_npr ?? invoice.amount_due_npr ?? 0);
+};
+const eventLabel = {
+  created: 'Created',
+  updated: 'Updated',
+  payment_received: 'Payment received',
+  payment_pending: 'Payment pending',
+  cancelled: 'Cancelled',
+  email_queued: 'Email queued'
+};
+
 function Overview({ transactions, invoices, onNavigate, name }) {
+  const now = new Date();
+  const currentMonth = monthKey(now);
+  const monthNames = useMemo(() => {
+    return Array.from({ length: 6 }, (_, index) => {
+      const item = new Date(now.getFullYear(), now.getMonth() - 5 + index, 1);
+      return { key: monthKey(item), label: item.toLocaleString('en-US', { month: 'short' }) };
+    });
+  }, []);
   const totals = useMemo(() => transactions.reduce((sum, item) => ({ ...sum, [item.type]: sum[item.type] + item.amount }), { income: 0, expense: 0 }), [transactions]);
-  const receivable = invoices.filter((item) => item.status !== 'paid' && item.status !== 'cancelled').reduce((sum, item) => sum + Number(item.amount_due_npr || 0), 0);
+  const monthRows = transactions.filter((item) => monthKey(item.date) === currentMonth);
+  const monthIncome = monthRows.filter((item) => item.type === 'income').reduce((sum, item) => sum + item.amount, 0);
+  const monthExpenses = monthRows.filter((item) => item.type === 'expense').reduce((sum, item) => sum + item.amount, 0);
+  const openInvoices = invoices.filter((item) => item.status !== 'paid' && item.status !== 'cancelled');
+  const receivable = openInvoices.reduce((sum, item) => sum + invoiceBalance(item), 0);
+  const cashPosition = totals.income - totals.expense;
+  const cashFlow = monthNames.map((month) => {
+    const rows = transactions.filter((item) => monthKey(item.date) === month.key);
+    const income = rows.filter((item) => item.type === 'income').reduce((sum, item) => sum + item.amount, 0);
+    const expense = rows.filter((item) => item.type === 'expense').reduce((sum, item) => sum + item.amount, 0);
+    return { ...month, income, expense, net: income - expense };
+  });
+  const maxFlow = Math.max(...cashFlow.flatMap((item) => [item.income, item.expense]), 0);
+  const netThisMonth = monthIncome - monthExpenses;
   return <>
     <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-sm font-semibold text-cyanbrand-600">Finance workspace</p><h1 className="mt-1 text-3xl font-semibold tracking-tight text-ink">Good afternoon, {name}.</h1><p className="mt-2 text-slate-500">Here is the financial pulse of YalaByte today.</p></div><button onClick={() => onNavigate('Transactions')} className="rounded-xl bg-cyanbrand-500 px-4 py-3 text-sm font-bold text-ink hover:bg-cyanbrand-400">+ Add transaction</button></div>
-    <section className="mt-7 grid gap-4 md:grid-cols-2 xl:grid-cols-4"><Metric label="Cash position" value={money(24840)} note="Across operating accounts"/><Metric label="Income this month" value={money(totals.income)} note="+18% from last month" tone="text-emerald-600"/><Metric label="Expenses this month" value={money(totals.expense)} note="Within monthly budget"/><Metric label="Receivables" value={money(receivable)} note="2 open invoices" tone="text-amber-600"/></section>
+    <section className="mt-7 grid gap-4 md:grid-cols-2 xl:grid-cols-4"><Metric label="Cash position" value={money(cashPosition)} note="Income minus expenses"/><Metric label="Income this month" value={money(monthIncome)} note={`${monthRows.filter((item) => item.type === 'income').length} income entries`} tone="text-emerald-600"/><Metric label="Expenses this month" value={money(monthExpenses)} note={`${monthRows.filter((item) => item.type === 'expense').length} expense entries`}/><Metric label="Receivables" value={money(receivable)} note={`${openInvoices.length} open invoices`} tone="text-amber-600"/></section>
     <section className="mt-5 grid gap-5 xl:grid-cols-[1.6fr_1fr]">
-      <div className="rounded-2xl border border-slate-200 bg-white p-5"><div className="flex items-center justify-between"><div><h2 className="font-semibold text-ink">Cash flow</h2><p className="mt-1 text-sm text-slate-500">Six-month operating trend</p></div><span className="rounded-lg bg-slate-100 px-3 py-2 text-xs font-bold text-slate-600">Jan – Jun 2026</span></div><div className="mt-8 flex h-52 items-end gap-3 border-b border-slate-200 px-2">{[42,58,49,70,62,86].map((height, i) => <div key={i} className="flex flex-1 items-end justify-center gap-1"><div className="w-1/2 rounded-t-md bg-cyanbrand-500" style={{height:`${height}%`}}/><div className="w-1/2 rounded-t-md bg-slate-200" style={{height:`${Math.max(22,height-25)}%`}}/></div>)}</div><div className="mt-3 grid grid-cols-6 text-center text-xs font-semibold text-slate-400">{['Jan','Feb','Mar','Apr','May','Jun'].map(m => <span key={m}>{m}</span>)}</div></div>
-      <div className="rounded-2xl bg-ink p-5 text-white"><p className="text-sm font-semibold text-cyanbrand-400">June budget</p><p className="mt-3 text-3xl font-semibold">74% used</p><div className="mt-5 h-2 overflow-hidden rounded-full bg-white/10"><div className="h-full w-[74%] rounded-full bg-cyanbrand-500"/></div><div className="mt-6 grid grid-cols-2 gap-4 border-t border-white/10 pt-5"><div><p className="text-xs text-slate-400">Spent</p><p className="mt-1 font-semibold">{money(9830)}</p></div><div><p className="text-xs text-slate-400">Remaining</p><p className="mt-1 font-semibold">{money(3450)}</p></div></div><button onClick={() => onNavigate('Expenses')} className="mt-6 w-full rounded-xl border border-white/15 px-4 py-3 text-sm font-bold hover:bg-white/5">Review expenses</button></div>
+      <div className="rounded-2xl border border-slate-200 bg-white p-5"><div className="flex items-center justify-between"><div><h2 className="font-semibold text-ink">Cash flow</h2><p className="mt-1 text-sm text-slate-500">Six-month operating trend</p></div><span className="rounded-lg bg-slate-100 px-3 py-2 text-xs font-bold text-slate-600">{monthNames[0].label} - {monthNames[5].label} {now.getFullYear()}</span></div>{maxFlow ? <><div className="mt-8 flex h-52 items-end gap-3 border-b border-slate-200 px-2">{cashFlow.map((item) => <div key={item.key} className="flex flex-1 items-end justify-center gap-1"><div title={`Income ${money(item.income)}`} className="w-1/2 rounded-t-md bg-cyanbrand-500" style={{height:`${Math.max((item.income / maxFlow) * 100, item.income ? 8 : 0)}%`}}/><div title={`Expenses ${money(item.expense)}`} className="w-1/2 rounded-t-md bg-slate-200" style={{height:`${Math.max((item.expense / maxFlow) * 100, item.expense ? 8 : 0)}%`}}/></div>)}</div><div className="mt-3 grid grid-cols-6 text-center text-xs font-semibold text-slate-400">{cashFlow.map(item => <span key={item.key}>{item.label}</span>)}</div></> : <p className="mt-20 text-center text-sm text-slate-500">No cash movement recorded yet.</p>}</div>
+      <div className="rounded-2xl bg-ink p-5 text-white"><p className="text-sm font-semibold text-cyanbrand-400">Operating summary</p><p className="mt-3 text-3xl font-semibold">{money(netThisMonth)}</p><p className="mt-2 text-sm text-slate-400">Net movement this month</p><div className="mt-6 grid grid-cols-2 gap-4 border-t border-white/10 pt-5"><div><p className="text-xs text-slate-400">Income</p><p className="mt-1 font-semibold">{money(monthIncome)}</p></div><div><p className="text-xs text-slate-400">Expenses</p><p className="mt-1 font-semibold">{money(monthExpenses)}</p></div></div><button onClick={() => onNavigate('Expenses')} className="mt-6 w-full rounded-xl border border-white/15 px-4 py-3 text-sm font-bold hover:bg-white/5">Review expenses</button></div>
     </section>
     <section className="mt-5 rounded-2xl border border-slate-200 bg-white"><div className="flex items-center justify-between border-b border-slate-100 p-5"><div><h2 className="font-semibold text-ink">Recent activity</h2><p className="mt-1 text-sm text-slate-500">Latest money in and out</p></div><button onClick={() => onNavigate('Transactions')} className="text-sm font-bold text-cyanbrand-600">View all</button></div><TransactionTable rows={transactions.slice(0,4)}/></section>
   </>;
@@ -38,9 +82,9 @@ function Transactions({ rows, onAdd, error }) {
   return <><h1 className="text-3xl font-semibold tracking-tight text-ink">Transactions</h1><p className="mt-2 text-slate-500">Record and review every movement of money in Nepali rupees.</p><form onSubmit={submit} className="mt-7 grid gap-3 rounded-2xl border border-slate-200 bg-white p-5 md:grid-cols-2 xl:grid-cols-6">{[['description','Description'],['party','Vendor or client'],['category','Category'],['amount','Amount (Rs)']].map(([key,label]) => <label key={key} className="text-xs font-bold uppercase tracking-wider text-slate-500">{label}<input type={key === 'amount' ? 'number' : 'text'} min={key === 'amount' ? '0' : undefined} value={form[key]} onChange={e=>setForm({...form,[key]:e.target.value})} className="mt-2 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-medium normal-case tracking-normal outline-none focus:border-cyanbrand-500"/></label>)}<label className="text-xs font-bold uppercase tracking-wider text-slate-500">Type<select value={form.type} onChange={e=>setForm({...form,type:e.target.value})} className="mt-2 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm normal-case"><option value="expense">Expense</option><option value="income">Income</option></select></label><button disabled={saving} className="self-end rounded-xl bg-cyanbrand-500 px-4 py-3 text-sm font-bold text-ink disabled:opacity-60">{saving ? 'Saving…' : 'Add entry'}</button></form>{error && <p className="mt-4 rounded-xl bg-red-50 p-3 text-sm font-medium text-red-700">{error}</p>}<div className="mt-5 rounded-2xl border border-slate-200 bg-white">{rows.length ? <TransactionTable rows={rows}/> : <p className="p-8 text-center text-sm text-slate-500">No transactions yet. Add the first entry above.</p>}</div></>;
 }
 
-function Invoices({ deals, invoices, onCreate, onEdit, error }) {
+function Invoices({ deals, invoices, events, onCreate, onEdit, onPaymentReceived, onPaymentPending, onCancel, onQueueEmail, error }) {
   const readyDeals = deals.filter((deal) => deal.status !== 'archived');
-  return <><div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div><h1 className="text-3xl font-semibold tracking-tight text-ink">Invoices</h1><p className="mt-2 text-slate-500">Create invoices from won CRM deals and manage billing from Finance.</p></div></div>{error && <p className="mt-4 rounded-xl bg-red-50 p-3 text-sm font-medium text-red-700">{error}</p>}<section className="mt-7 grid gap-5 xl:grid-cols-[0.95fr_1.05fr]"><div className="rounded-2xl border border-slate-200 bg-white"><div className="border-b border-slate-100 p-5"><h2 className="font-semibold text-ink">Ready to invoice</h2><p className="mt-1 text-sm text-slate-500">Won CRM leads waiting for Finance action.</p></div><div className="divide-y divide-slate-100">{readyDeals.length ? readyDeals.map((deal) => <article className="p-5" key={deal.id}><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><p className="text-xs font-bold text-cyanbrand-600">{deal.service || 'Won deal'}</p><h3 className="mt-1 font-semibold text-ink">{deal.name}</h3><p className="mt-1 text-sm text-slate-500">{deal.company || deal.email || 'CRM handoff'}{deal.owner ? ` · ${deal.owner}` : ''}</p><p className="mt-2 text-lg font-bold text-ink">{money(deal.value)}</p></div><button className="rounded-xl bg-cyanbrand-500 px-4 py-2.5 text-sm font-bold text-ink hover:bg-cyanbrand-400" onClick={() => onCreate(deal)} type="button">Create invoice</button></div></article>) : <p className="p-8 text-center text-sm text-slate-500">No won CRM deals are waiting right now.</p>}</div></div><div className="rounded-2xl border border-slate-200 bg-white"><div className="border-b border-slate-100 p-5"><h2 className="font-semibold text-ink">Invoice history</h2><p className="mt-1 text-sm text-slate-500">Saved PDFs and billing statuses.</p></div><div className="divide-y divide-slate-100">{invoices.length ? invoices.map((item) => <button className="flex w-full flex-col gap-3 p-5 text-left hover:bg-slate-50 sm:flex-row sm:items-center sm:justify-between" key={item.id} onClick={() => onEdit(item)} type="button"><div><p className="text-xs font-bold text-cyanbrand-600">{item.invoice_number}</p><h3 className="mt-1 font-semibold text-ink">{item.invoice_data?.company || item.invoice_data?.clientName || 'Client'}</h3><p className="mt-1 text-sm text-slate-500">Due {item.due_date ? date(item.due_date) : 'not set'}</p></div><div className="flex items-center gap-5"><p className="text-lg font-bold text-ink">{money(Number(item.amount_due_npr || 0))}</p><span className={`rounded-full px-3 py-1.5 text-xs font-bold ${item.status === 'paid' ? 'bg-emerald-50 text-emerald-700' : item.status === 'issued' ? 'bg-cyan-50 text-cyan-700' : item.status === 'cancelled' ? 'bg-rose-50 text-rose-700' : 'bg-slate-100 text-slate-600'}`}>{item.status}</span></div></button>) : <p className="p-8 text-center text-sm text-slate-500">No invoices have been generated yet.</p>}</div></div></section></>;
+  return <><div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div><h1 className="text-3xl font-semibold tracking-tight text-ink">Invoices</h1><p className="mt-2 text-slate-500">Create invoices from won CRM deals and manage billing from Finance.</p></div></div>{error && <p className="mt-4 rounded-xl bg-red-50 p-3 text-sm font-medium text-red-700">{error}</p>}<section className="mt-7 grid gap-5 xl:grid-cols-[0.95fr_1.05fr]"><div className="rounded-2xl border border-slate-200 bg-white"><div className="border-b border-slate-100 p-5"><h2 className="font-semibold text-ink">Ready to invoice</h2><p className="mt-1 text-sm text-slate-500">Won CRM leads waiting for Finance action.</p></div><div className="divide-y divide-slate-100">{readyDeals.length ? readyDeals.map((deal) => <article className="p-5" key={deal.id}><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><p className="text-xs font-bold text-cyanbrand-600">{deal.service || 'Won deal'}</p><h3 className="mt-1 font-semibold text-ink">{deal.name}</h3><p className="mt-1 text-sm text-slate-500">{deal.company || deal.email || 'CRM handoff'}{deal.owner ? ` · ${deal.owner}` : ''}</p><p className="mt-2 text-lg font-bold text-ink">{money(deal.value)}</p></div><button className="rounded-xl bg-cyanbrand-500 px-4 py-2.5 text-sm font-bold text-ink hover:bg-cyanbrand-400" onClick={() => onCreate(deal)} type="button">Create invoice</button></div></article>) : <p className="p-8 text-center text-sm text-slate-500">No won CRM deals are waiting right now.</p>}</div></div><div className="rounded-2xl border border-slate-200 bg-white"><div className="border-b border-slate-100 p-5"><h2 className="font-semibold text-ink">Invoice history</h2><p className="mt-1 text-sm text-slate-500">Payment and cancellation controls are recorded in audit history.</p></div><div className="divide-y divide-slate-100">{invoices.length ? invoices.map((item) => { const balance = invoiceBalance(item); const paid = Number(item.amount_paid_npr || 0); return <article className="p-5" key={item.id}><div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"><div><p className="text-xs font-bold text-cyanbrand-600">{item.invoice_number}</p><h3 className="mt-1 font-semibold text-ink">{invoiceClientName(item)}</h3><p className="mt-1 text-sm text-slate-500">Due {item.due_date ? date(item.due_date) : 'not set'} · Paid {money(paid)} · Balance {money(balance)}</p></div><div className="flex flex-col items-start gap-2 sm:items-end"><p className="text-lg font-bold text-ink">{money(Number(item.amount_due_npr || 0))}</p><span className={`rounded-full px-3 py-1.5 text-xs font-bold ${item.status === 'paid' ? 'bg-emerald-50 text-emerald-700' : item.status === 'issued' ? 'bg-cyan-50 text-cyan-700' : item.status === 'cancelled' ? 'bg-rose-50 text-rose-700' : 'bg-slate-100 text-slate-600'}`}>{item.status}</span></div></div><div className="mt-4 flex flex-wrap gap-2"><button className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50" onClick={() => onEdit(item)} type="button">Edit PDF</button><button className="rounded-lg border border-cyan-200 bg-cyan-50 px-3 py-2 text-xs font-bold text-cyan-700 hover:bg-cyan-100 disabled:cursor-not-allowed disabled:opacity-40" disabled={item.status === 'cancelled'} onClick={() => onQueueEmail(item)} type="button">Queue email</button><button className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-bold text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-40" disabled={item.status === 'paid' || item.status === 'cancelled'} onClick={() => onPaymentReceived(item)} type="button">Payment received</button><button className="rounded-lg bg-amber-100 px-3 py-2 text-xs font-bold text-amber-800 hover:bg-amber-200 disabled:cursor-not-allowed disabled:opacity-40" disabled={item.status === 'cancelled' || item.status === 'paid'} onClick={() => onPaymentPending(item)} type="button">Pending</button><button className="rounded-lg bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700 hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-40" disabled={item.status === 'cancelled' || item.status === 'paid'} onClick={() => onCancel(item)} type="button">Cancel invoice</button></div></article>; }) : <p className="p-8 text-center text-sm text-slate-500">No invoices have been generated yet.</p>}</div></div></section><section className="mt-5 rounded-2xl border border-slate-200 bg-white"><div className="border-b border-slate-100 p-5"><h2 className="font-semibold text-ink">Invoice audit history</h2><p className="mt-1 text-sm text-slate-500">Created, email, payment, and cancellation actions stay in record.</p></div><div className="divide-y divide-slate-100">{events.length ? events.slice(0, 20).map((event) => <article className="flex flex-col gap-2 p-5 sm:flex-row sm:items-center sm:justify-between" key={event.id}><div><p className="font-semibold text-ink">{eventLabel[event.event_type] || event.event_type} · {event.invoice_number}</p><p className="mt-1 text-sm text-slate-500">{event.client_name} by {event.actor_name || event.actor_email || 'Finance'} on {date(event.created_at)}</p>{event.note ? <p className="mt-1 text-xs font-medium text-slate-400">{event.note}</p> : null}</div><p className="font-bold text-ink">{money(Number(event.amount_npr || 0))}</p></article>) : <p className="p-8 text-center text-sm text-slate-500">No invoice audit events yet.</p>}</div></section></>;
 }
 
 function Expenses({ rows, onNavigate }) {
@@ -50,10 +94,21 @@ function Expenses({ rows, onNavigate }) {
   return <><div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div><h1 className="text-3xl font-semibold tracking-tight text-ink">Expenses</h1><p className="mt-2 text-slate-500">Track operating spend by category, vendor, and status.</p></div><button onClick={() => onNavigate('Transactions')} className="rounded-xl bg-cyanbrand-500 px-4 py-3 text-sm font-bold text-ink hover:bg-cyanbrand-400">Add expense</button></div><section className="mt-7 grid gap-4 md:grid-cols-3"><Metric label="Total expenses" value={money(total)} note={`${expenses.length} recorded entries`} /><Metric label="Top category" value={byCategory[0]?.[0] || 'None'} note={byCategory[0] ? money(byCategory[0][1]) : 'No spend yet'} tone="text-amber-600" /><Metric label="Cleared" value={expenses.filter((row) => row.status === 'Cleared').length} note="Posted transactions" tone="text-emerald-600" /></section><section className="mt-5 grid gap-5 xl:grid-cols-[0.8fr_1.2fr]"><div className="rounded-2xl border border-slate-200 bg-white p-5"><h2 className="font-semibold text-ink">Spend by category</h2><div className="mt-5 space-y-3">{byCategory.length ? byCategory.map(([category, amount]) => <div key={category}><div className="mb-1 flex justify-between text-sm"><span className="font-semibold text-slate-600">{category}</span><span className="font-bold text-ink">{money(amount)}</span></div><div className="h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-cyanbrand-500" style={{ width: `${Math.max((amount / Math.max(total, 1)) * 100, 6)}%` }} /></div></div>) : <p className="py-8 text-center text-sm text-slate-500">No expenses recorded yet.</p>}</div></div><div className="rounded-2xl border border-slate-200 bg-white">{expenses.length ? <TransactionTable rows={expenses.slice(0, 8)} /> : <p className="p-8 text-center text-sm text-slate-500">Add an expense from Transactions to populate this view.</p>}</div></section></>;
 }
 
-function Payroll({ rows, onNavigate }) {
-  const payrollRows = rows.filter((row) => row.type === 'expense' && ['payroll', 'salary', 'contractor', 'benefits'].some((term) => row.category.toLowerCase().includes(term) || row.description.toLowerCase().includes(term)));
+function Payroll({ rows, onAdd, error }) {
+  const [form, setForm] = useState({ payee: '', period: '', category: 'Payroll', amount: '', note: '' });
+  const [saving, setSaving] = useState(false);
+  const payrollRows = rows.filter((row) => row.type === 'expense' && ['payroll', 'salary', 'contractor', 'benefits', 'bonus'].some((term) => row.category.toLowerCase().includes(term) || row.description.toLowerCase().includes(term)));
   const total = payrollRows.reduce((sum, row) => sum + row.amount, 0);
-  return <><div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div><h1 className="text-3xl font-semibold tracking-tight text-ink">Payroll</h1><p className="mt-2 text-slate-500">Review salary, contractor, and benefit payments recorded in Transactions.</p></div><button onClick={() => onNavigate('Transactions')} className="rounded-xl bg-cyanbrand-500 px-4 py-3 text-sm font-bold text-ink hover:bg-cyanbrand-400">Record payroll</button></div><section className="mt-7 grid gap-4 md:grid-cols-3"><Metric label="Payroll paid" value={money(total)} note={`${payrollRows.length} payroll entries`} tone="text-emerald-600" /><Metric label="Next cycle" value="Monthly" note="Use Transactions to post payments" /><Metric label="Open items" value="0" note="No approval queue yet" tone="text-amber-600" /></section><section className="mt-5 rounded-2xl border border-slate-200 bg-white"><div className="border-b border-slate-100 p-5"><h2 className="font-semibold text-ink">Payroll activity</h2><p className="mt-1 text-sm text-slate-500">Entries tagged as payroll, salary, contractor, or benefits.</p></div>{payrollRows.length ? <TransactionTable rows={payrollRows} /> : <p className="p-8 text-center text-sm text-slate-500">No payroll entries yet. Record one under Transactions.</p>}</section></>;
+  const submit = async (event) => {
+    event.preventDefault();
+    if (!form.payee.trim() || !Number(form.amount)) return;
+    setSaving(true);
+    const description = `${form.category}${form.period ? ` - ${form.period}` : ''}${form.note ? ` - ${form.note}` : ''}`;
+    const saved = await onAdd({ description, party: form.payee, category: form.category, amount: form.amount, type: 'expense' });
+    if (saved) setForm({ payee: '', period: '', category: 'Payroll', amount: '', note: '' });
+    setSaving(false);
+  };
+  return <><div><h1 className="text-3xl font-semibold tracking-tight text-ink">Payroll</h1><p className="mt-2 text-slate-500">Record salary, contractor, and benefit payments without mixing payroll into the client/vendor transaction form.</p></div><section className="mt-7 grid gap-4 md:grid-cols-3"><Metric label="Payroll paid" value={money(total)} note={`${payrollRows.length} payroll entries`} tone="text-emerald-600" /><Metric label="Next cycle" value="Monthly" note="Post payroll below" /><Metric label="Open items" value="0" note="No approval queue yet" tone="text-amber-600" /></section><form onSubmit={submit} className="mt-5 grid gap-3 rounded-2xl border border-slate-200 bg-white p-5 md:grid-cols-2 xl:grid-cols-6"><label className="text-xs font-bold uppercase tracking-wider text-slate-500 xl:col-span-2">Employee or contractor<input value={form.payee} onChange={(event) => setForm({ ...form, payee: event.target.value })} className="mt-2 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-medium normal-case tracking-normal outline-none focus:border-cyanbrand-500" placeholder="Team member name" /></label><label className="text-xs font-bold uppercase tracking-wider text-slate-500">Pay period<input value={form.period} onChange={(event) => setForm({ ...form, period: event.target.value })} className="mt-2 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-medium normal-case tracking-normal outline-none focus:border-cyanbrand-500" placeholder="June 2026" /></label><label className="text-xs font-bold uppercase tracking-wider text-slate-500">Payroll type<select value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value })} className="mt-2 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm normal-case"><option value="Payroll">Salary</option><option value="Contractor">Contractor</option><option value="Benefits">Benefits</option><option value="Bonus">Bonus</option></select></label><label className="text-xs font-bold uppercase tracking-wider text-slate-500">Amount (Rs)<input type="number" min="0" value={form.amount} onChange={(event) => setForm({ ...form, amount: event.target.value })} className="mt-2 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-medium normal-case tracking-normal outline-none focus:border-cyanbrand-500" /></label><button disabled={saving} className="self-end rounded-xl bg-cyanbrand-500 px-4 py-3 text-sm font-bold text-ink disabled:opacity-60">{saving ? 'Saving...' : 'Record payroll'}</button><label className="text-xs font-bold uppercase tracking-wider text-slate-500 md:col-span-2 xl:col-span-6">Internal note<input value={form.note} onChange={(event) => setForm({ ...form, note: event.target.value })} className="mt-2 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-medium normal-case tracking-normal outline-none focus:border-cyanbrand-500" placeholder="Optional payroll note" /></label></form>{error && <p className="mt-4 rounded-xl bg-red-50 p-3 text-sm font-medium text-red-700">{error}</p>}<section className="mt-5 rounded-2xl border border-slate-200 bg-white"><div className="border-b border-slate-100 p-5"><h2 className="font-semibold text-ink">Payroll activity</h2><p className="mt-1 text-sm text-slate-500">Entries tagged as payroll, salary, contractor, bonus, or benefits.</p></div>{payrollRows.length ? <TransactionTable rows={payrollRows} /> : <p className="p-8 text-center text-sm text-slate-500">No payroll entries yet. Record one above.</p>}</section></>;
 }
 
 function Reports({ rows, invoices }) {
@@ -69,24 +124,57 @@ export default function FinanceApp({ profile, signOut }) {
   const [rows, setRows] = useState([]);
   const [deals, setDeals] = useState([]);
   const [invoices, setInvoices] = useState([]);
+  const [invoiceEvents, setInvoiceEvents] = useState([]);
   const [invoiceModal, setInvoiceModal] = useState(null);
   const [dataError, setDataError] = useState('');
   useEffect(() => {
     supabase.from('finance_transactions').select('*').order('transaction_date', { ascending: false }).order('created_at', { ascending: false }).then(({ data, error }) => {
       if (error) { setDataError(error.message); return; }
-      setRows((data || []).map(item => ({ id: item.id, date: item.transaction_date, description: item.description, party: item.party, category: item.category, type: item.transaction_type, amount: Number(item.amount_npr), status: item.status[0].toUpperCase() + item.status.slice(1) })));
+      setRows((data || []).map(mapTransaction));
     });
     Promise.all([
       supabase.from('finance_deals').select('*').order('won_at', { ascending: false }),
-      supabase.from('finance_invoices').select('*').order('created_at', { ascending: false })
-    ]).then(([dealResult, invoiceResult]) => {
-      if (dealResult.error || invoiceResult.error) {
-        setDataError(dealResult.error?.message || invoiceResult.error?.message);
+      supabase.from('finance_invoices').select('*').order('created_at', { ascending: false }),
+      supabase.from('finance_invoice_events').select('*').order('created_at', { ascending: false })
+    ]).then(([dealResult, invoiceResult, eventResult]) => {
+      if (dealResult.error || invoiceResult.error || eventResult.error) {
+        setDataError(dealResult.error?.message || invoiceResult.error?.message || eventResult.error?.message);
         return;
       }
-      setDeals((dealResult.data || []).map((item) => ({ id: item.id, crmLeadId: item.crm_lead_id, name: item.client_name, company: item.company, email: item.email, phone: item.phone, service: item.service, value: Number(item.deal_value_npr || 0), owner: item.owner_name, status: item.status, wonAt: item.won_at, invoices: [] })));
+      setDeals((dealResult.data || []).map(mapFinanceDeal));
       setInvoices(invoiceResult.data || []);
+      setInvoiceEvents(eventResult.data || []);
     });
+    const channel = supabase
+      .channel('finance-live')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'finance_deals' }, (payload) => {
+        setDeals((current) => {
+          if (payload.eventType === 'DELETE') return current.filter((deal) => deal.id !== payload.old?.id);
+          const incoming = mapFinanceDeal(payload.new);
+          return [incoming, ...current.filter((deal) => deal.id !== incoming.id)].sort((left, right) => new Date(right.wonAt || 0) - new Date(left.wonAt || 0));
+        });
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'finance_invoices' }, (payload) => {
+        setInvoices((current) => {
+          if (payload.eventType === 'DELETE') return current.filter((invoice) => invoice.id !== payload.old?.id);
+          return [payload.new, ...current.filter((invoice) => invoice.id !== payload.new.id)].sort((left, right) => new Date(right.created_at || 0) - new Date(left.created_at || 0));
+        });
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'finance_transactions' }, (payload) => {
+        setRows((current) => {
+          if (payload.eventType === 'DELETE') return current.filter((row) => row.id !== payload.old?.id);
+          const incoming = mapTransaction(payload.new);
+          return [incoming, ...current.filter((row) => row.id !== incoming.id)].sort((left, right) => new Date(right.date || 0) - new Date(left.date || 0));
+        });
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'finance_invoice_events' }, (payload) => {
+        setInvoiceEvents((current) => {
+          if (payload.eventType === 'DELETE') return current.filter((event) => event.id !== payload.old?.id);
+          return [payload.new, ...current.filter((event) => event.id !== payload.new.id)].sort((left, right) => new Date(right.created_at || 0) - new Date(left.created_at || 0));
+        });
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
   }, []);
   const addRow = async (form) => {
     setDataError('');
@@ -95,6 +183,27 @@ export default function FinanceApp({ profile, signOut }) {
     if (error) { setDataError(error.message); return false; }
     setRows(current => [{ id: data.id, date: data.transaction_date, description: data.description, party: data.party, category: data.category, type: data.transaction_type, amount: Number(data.amount_npr), status: 'Cleared' }, ...current]);
     return true;
+  };
+  const auditInvoice = async (invoiceRow, eventType, note = '', amount = Number(invoiceRow.amount_due_npr || 0), eventData = {}) => {
+    const eventRecord = {
+      invoice_id: invoiceRow.id,
+      event_type: eventType,
+      actor_id: profile.id,
+      actor_name: profile?.full_name || '',
+      actor_email: profile?.email || '',
+      client_name: invoiceClientName(invoiceRow),
+      invoice_number: invoiceRow.invoice_number,
+      amount_npr: amount,
+      note,
+      event_data: eventData
+    };
+    const { data, error } = await supabase.from('finance_invoice_events').insert(eventRecord).select().single();
+    if (error) {
+      setDataError(error.message);
+      throw error;
+    }
+    setInvoiceEvents((current) => [data, ...current.filter((event) => event.id !== data.id)]);
+    return data;
   };
   const openInvoiceForDeal = (deal) => {
     const dealInvoices = invoices.filter((invoice) => invoice.crm_lead_id === deal.crmLeadId).map((invoice) => invoice.invoice_data);
@@ -117,13 +226,17 @@ export default function FinanceApp({ profile, signOut }) {
   };
   const saveInvoice = async (invoice) => {
     if (!invoiceModal?.deal) return;
+    const amountDue = Number(invoice.amountDue || 0);
+    const existingInvoice = invoices.find((item) => item.id === invoice.id);
     const record = {
       id: invoice.id,
       deal_id: invoiceModal.deal.id,
       crm_lead_id: invoiceModal.deal.crmLeadId,
       invoice_number: invoice.invoiceNumber,
       status: invoice.status,
-      amount_due_npr: Number(invoice.amountDue || 0),
+      amount_due_npr: amountDue,
+      amount_paid_npr: invoice.status === 'paid' ? amountDue : Number(existingInvoice?.amount_paid_npr || 0),
+      balance_due_npr: invoice.status === 'paid' || invoice.status === 'cancelled' ? 0 : amountDue,
       grand_total_npr: Number(invoice.grandTotal || 0),
       due_date: invoice.dueDate || null,
       invoice_data: invoice,
@@ -135,6 +248,7 @@ export default function FinanceApp({ profile, signOut }) {
       throw error;
     }
     setInvoices((current) => [data, ...current.filter((item) => item.id !== data.id)]);
+    await auditInvoice(data, existingInvoice ? 'updated' : 'created', existingInvoice ? 'Invoice PDF details updated.' : 'Invoice generated in Finance.', amountDue);
     const { error: dealError } = await supabase.from('finance_deals').update({ status: invoice.status === 'paid' ? 'paid' : 'invoicing', updated_at: new Date().toISOString() }).eq('id', invoiceModal.deal.id);
     if (dealError) {
       setDataError(dealError.message);
@@ -142,8 +256,74 @@ export default function FinanceApp({ profile, signOut }) {
     }
     setDeals((current) => current.map((deal) => deal.id === invoiceModal.deal.id ? { ...deal, status: invoice.status === 'paid' ? 'paid' : 'invoicing' } : deal));
   };
+  const updateInvoiceRecord = async (invoiceRow, changes) => {
+    const { data, error } = await supabase.from('finance_invoices').update({ ...changes, updated_at: new Date().toISOString() }).eq('id', invoiceRow.id).select().single();
+    if (error) {
+      setDataError(error.message);
+      throw error;
+    }
+    setInvoices((current) => [data, ...current.filter((item) => item.id !== data.id)]);
+    return data;
+  };
+  const markPaymentReceived = async (invoiceRow) => {
+    setDataError('');
+    const amount = invoiceBalance(invoiceRow) || Number(invoiceRow.amount_due_npr || 0);
+    const updatedInvoice = await updateInvoiceRecord(invoiceRow, { status: 'paid', amount_paid_npr: amount, balance_due_npr: 0 });
+    await auditInvoice(updatedInvoice, 'payment_received', 'Payment recorded from invoice controls.', amount);
+    const deal = deals.find((item) => item.id === invoiceRow.deal_id);
+    if (deal) await supabase.from('finance_deals').update({ status: 'paid', updated_at: new Date().toISOString() }).eq('id', deal.id);
+    const transaction = {
+      transaction_date: new Date().toISOString().slice(0, 10),
+      description: `Payment received - ${invoiceRow.invoice_number}`,
+      party: invoiceClientName(invoiceRow),
+      category: 'Invoice payment',
+      transaction_type: 'income',
+      amount_npr: amount,
+      status: 'cleared',
+      created_by: profile.id
+    };
+    const { data, error } = await supabase.from('finance_transactions').insert(transaction).select().single();
+    if (error) {
+      setDataError(error.message);
+      throw error;
+    }
+    setRows((current) => [mapTransaction(data), ...current.filter((row) => row.id !== data.id)]);
+  };
+  const markPaymentPending = async (invoiceRow) => {
+    setDataError('');
+    const amount = Number(invoiceRow.amount_due_npr || 0);
+    const updatedInvoice = await updateInvoiceRecord(invoiceRow, { status: 'issued', amount_paid_npr: 0, balance_due_npr: amount });
+    await auditInvoice(updatedInvoice, 'payment_pending', 'Payment marked as pending.', amount);
+  };
+  const cancelInvoice = async (invoiceRow) => {
+    if (!window.confirm(`Cancel ${invoiceRow.invoice_number}? This keeps the invoice in history and removes it from receivables.`)) return;
+    setDataError('');
+    const amount = invoiceBalance(invoiceRow);
+    const updatedInvoice = await updateInvoiceRecord(invoiceRow, { status: 'cancelled', balance_due_npr: 0 });
+    await auditInvoice(updatedInvoice, 'cancelled', `Cancelled bill for ${invoiceClientName(invoiceRow)}.`, amount);
+  };
+  const queueInvoiceEmail = async (invoiceRow) => {
+    setDataError('');
+    const toEmail = invoiceRow.invoice_data?.email || '';
+    if (!toEmail) {
+      setDataError('This invoice has no client email from the CRM lead.');
+      return;
+    }
+    const ownerEmail = deals.find((deal) => deal.id === invoiceRow.deal_id || deal.crmLeadId === invoiceRow.crm_lead_id)?.ownerEmail || invoiceRow.invoice_data?.ownerEmail || '';
+    const subject = `YalaByte invoice ${invoiceRow.invoice_number}`;
+    const body = `Hello ${invoiceRow.invoice_data?.clientName || invoiceClientName(invoiceRow)},\n\nPlease find your YalaByte invoice ${invoiceRow.invoice_number}. Amount due: ${money(Number(invoiceRow.amount_due_npr || 0))}.\n\nRegards,\nYalaByte Finance`;
+    const emailRecord = { invoice_id: invoiceRow.id, to_email: toEmail, cc_email: ownerEmail, subject, body, created_by: profile.id };
+    const { data, error } = await supabase.from('finance_invoice_emails').insert(emailRecord).select().single();
+    if (error) {
+      setDataError(error.message);
+      throw error;
+    }
+    await auditInvoice(invoiceRow, 'email_queued', `Email queued to ${toEmail}${ownerEmail ? ` with CC ${ownerEmail}` : ''}.`, Number(invoiceRow.amount_due_npr || 0), emailRecord);
+    const { error: sendError } = await supabase.functions.invoke('send-invoice-email', { body: { emailId: data.id } });
+    if (sendError) setDataError(`Email queued, but the send function needs setup: ${sendError.message}`);
+  };
   const initials = (profile?.full_name || profile?.email || 'YB').split(/\s|@/).filter(Boolean).slice(0,2).map(part=>part[0]).join('').toUpperCase();
   const firstName = (profile?.full_name || profile?.email || 'Team').split(/\s|@/)[0];
   const financeUser = { name: profile?.full_name || profile?.email || 'Finance team', email: profile?.email || '' };
-  return <div className="min-h-screen bg-[#f4f7f9] lg:flex"><aside className="fixed inset-y-0 hidden w-64 flex-col bg-ink px-4 py-6 text-white lg:flex"><div className="flex items-center gap-3"><span className="grid h-12 w-12 place-items-center rounded-xl bg-white p-2"><img src="/images/yalabyte-yb-logo.png" alt="YalaByte" className="h-full w-full object-contain"/></span><div><p className="font-bold">YalaByte</p><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-cyanbrand-400">Finance ERP</p></div></div><p className="mt-8 px-3 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">Workspace</p><nav className="mt-3 space-y-1">{nav.map(item => <button key={item} onClick={()=>setPage(item)} className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition ${page===item?'bg-cyanbrand-500 text-ink':'text-slate-300 hover:bg-white/5 hover:text-white'}`}><Icon name={item}/>{item}</button>)}</nav><div className="mt-auto rounded-xl border border-white/10 p-3"><p className="truncate text-sm font-semibold">{profile?.full_name || profile?.email}</p><p className="mt-1 capitalize text-xs text-cyanbrand-400">{profile?.role}</p><button onClick={signOut} className="mt-3 text-xs font-semibold text-slate-400 hover:text-white">Sign out</button></div></aside><main className="w-full lg:ml-64"><header className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-4 lg:px-8"><div className="flex gap-2 overflow-x-auto lg:hidden">{nav.slice(0,4).map(item=><button key={item} onClick={()=>setPage(item)} className={`whitespace-nowrap rounded-lg px-3 py-2 text-xs font-bold ${page===item?'bg-ink text-white':'bg-slate-100 text-slate-600'}`}>{item}</button>)}</div><div className="ml-auto flex items-center gap-3"><span className="hidden text-sm font-medium text-slate-500 sm:block">June 24, 2026</span><span className="grid h-9 w-9 place-items-center rounded-full bg-ink text-xs font-bold text-white">{initials}</span></div></header><div className="mx-auto max-w-[1500px] p-4 sm:p-6 lg:p-8">{page==='Overview'?<Overview transactions={rows} invoices={invoices} onNavigate={setPage} name={firstName}/>:page==='Transactions'?<Transactions rows={rows} onAdd={addRow} error={dataError}/>:page==='Invoices'?<Invoices deals={deals} invoices={invoices} onCreate={openInvoiceForDeal} onEdit={editInvoice} error={dataError}/>:page==='Expenses'?<Expenses rows={rows} onNavigate={setPage}/>:page==='Payroll'?<Payroll rows={rows} onNavigate={setPage}/>:page==='Reports'?<Reports rows={rows} invoices={invoices}/>:null}</div>{invoiceModal ? <InvoiceModal currentUser={financeUser} invoice={invoiceModal.invoice} lead={invoiceModal.deal} onClose={() => setInvoiceModal(null)} onSaved={saveInvoice} /> : null}</main></div>;
+  return <div className="min-h-screen bg-[#f4f7f9] lg:flex"><aside className="fixed inset-y-0 hidden w-64 flex-col bg-ink px-4 py-6 text-white lg:flex"><div className="flex items-center gap-3"><span className="grid h-12 w-12 place-items-center rounded-xl bg-white p-2"><img src="/images/yalabyte-yb-logo.png" alt="YalaByte" className="h-full w-full object-contain"/></span><div><p className="font-bold">YalaByte</p><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-cyanbrand-400">Finance ERP</p></div></div><p className="mt-8 px-3 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">Workspace</p><nav className="mt-3 space-y-1">{nav.map(item => <button key={item} onClick={()=>setPage(item)} className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition ${page===item?'bg-cyanbrand-500 text-ink':'text-slate-300 hover:bg-white/5 hover:text-white'}`}><Icon name={item}/>{item}</button>)}</nav><div className="mt-auto rounded-xl border border-white/10 p-3"><p className="truncate text-sm font-semibold">{profile?.full_name || profile?.email}</p><p className="mt-1 capitalize text-xs text-cyanbrand-400">{profile?.role}</p><button onClick={signOut} className="mt-3 text-xs font-semibold text-slate-400 hover:text-white">Sign out</button></div></aside><main className="w-full lg:ml-64"><header className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-4 lg:px-8"><div className="flex gap-2 overflow-x-auto lg:hidden">{nav.slice(0,4).map(item=><button key={item} onClick={()=>setPage(item)} className={`whitespace-nowrap rounded-lg px-3 py-2 text-xs font-bold ${page===item?'bg-ink text-white':'bg-slate-100 text-slate-600'}`}>{item}</button>)}</div><div className="ml-auto flex items-center gap-3"><span className="hidden text-sm font-medium text-slate-500 sm:block">June 24, 2026</span><span className="grid h-9 w-9 place-items-center rounded-full bg-ink text-xs font-bold text-white">{initials}</span></div></header><div className="mx-auto max-w-[1500px] p-4 sm:p-6 lg:p-8">{page==='Overview'?<Overview transactions={rows} invoices={invoices} onNavigate={setPage} name={firstName}/>:page==='Transactions'?<Transactions rows={rows} onAdd={addRow} error={dataError}/>:page==='Invoices'?<Invoices deals={deals} invoices={invoices} events={invoiceEvents} onCreate={openInvoiceForDeal} onEdit={editInvoice} onPaymentReceived={markPaymentReceived} onPaymentPending={markPaymentPending} onCancel={cancelInvoice} onQueueEmail={queueInvoiceEmail} error={dataError}/>:page==='Expenses'?<Expenses rows={rows} onNavigate={setPage}/>:page==='Payroll'?<Payroll rows={rows} onAdd={addRow} error={dataError}/>:page==='Reports'?<Reports rows={rows} invoices={invoices}/>:null}</div>{invoiceModal ? <InvoiceModal currentUser={financeUser} invoice={invoiceModal.invoice} lead={invoiceModal.deal} onClose={() => setInvoiceModal(null)} onSaved={saveInvoice} /> : null}</main></div>;
 }

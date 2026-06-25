@@ -95,6 +95,8 @@ create table if not exists public.finance_invoices (
   invoice_number text not null unique,
   status text not null default 'issued' check (status in ('draft', 'issued', 'paid', 'cancelled')),
   amount_due_npr numeric(14,2) not null default 0,
+  amount_paid_npr numeric(14,2) not null default 0,
+  balance_due_npr numeric(14,2) not null default 0,
   grand_total_npr numeric(14,2) not null default 0,
   due_date date,
   invoice_data jsonb not null,
@@ -120,3 +122,86 @@ with check (public.current_user_role() in ('admin', 'finance'));
 
 grant select, insert, update on public.finance_deals to authenticated;
 grant select, insert, update on public.finance_invoices to authenticated;
+
+create table if not exists public.finance_invoice_events (
+  id uuid primary key default gen_random_uuid(),
+  invoice_id text not null references public.finance_invoices(id) on delete cascade,
+  event_type text not null check (event_type in ('created', 'updated', 'payment_received', 'payment_pending', 'cancelled', 'email_queued')),
+  actor_id uuid not null references public.profiles(id),
+  actor_name text not null default '',
+  actor_email text not null default '',
+  client_name text not null default '',
+  invoice_number text not null default '',
+  amount_npr numeric(14,2) not null default 0,
+  note text not null default '',
+  event_data jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+alter table public.finance_invoice_events enable row level security;
+
+create policy "Finance roles can read invoice audit events"
+on public.finance_invoice_events for select to authenticated
+using (public.current_user_role() in ('admin', 'finance'));
+
+create policy "Finance roles can create invoice audit events"
+on public.finance_invoice_events for insert to authenticated
+with check (public.current_user_role() in ('admin', 'finance') and actor_id = auth.uid());
+
+grant select, insert on public.finance_invoice_events to authenticated;
+
+create table if not exists public.finance_invoice_emails (
+  id uuid primary key default gen_random_uuid(),
+  invoice_id text not null references public.finance_invoices(id) on delete cascade,
+  from_email text not null default 'info@yalabyte.com',
+  to_email text not null,
+  cc_email text not null default '',
+  subject text not null,
+  body text not null,
+  status text not null default 'queued' check (status in ('queued', 'sent', 'failed', 'cancelled')),
+  created_by uuid not null references public.profiles(id),
+  created_at timestamptz not null default now(),
+  sent_at timestamptz
+);
+
+alter table public.finance_invoice_emails enable row level security;
+
+create policy "Finance roles can read invoice emails"
+on public.finance_invoice_emails for select to authenticated
+using (public.current_user_role() in ('admin', 'finance'));
+
+create policy "Finance roles can queue invoice emails"
+on public.finance_invoice_emails for insert to authenticated
+with check (public.current_user_role() in ('admin', 'finance') and created_by = auth.uid());
+
+create policy "Finance roles can update invoice email status"
+on public.finance_invoice_emails for update to authenticated
+using (public.current_user_role() in ('admin', 'finance'))
+with check (public.current_user_role() in ('admin', 'finance'));
+
+grant select, insert, update on public.finance_invoice_emails to authenticated;
+
+do $$ begin
+  alter publication supabase_realtime add table public.finance_transactions;
+exception when duplicate_object then null;
+end $$;
+
+do $$ begin
+  alter publication supabase_realtime add table public.finance_deals;
+exception when duplicate_object then null;
+end $$;
+
+do $$ begin
+  alter publication supabase_realtime add table public.finance_invoices;
+exception when duplicate_object then null;
+end $$;
+
+do $$ begin
+  alter publication supabase_realtime add table public.finance_invoice_events;
+exception when duplicate_object then null;
+end $$;
+
+do $$ begin
+  alter publication supabase_realtime add table public.finance_invoice_emails;
+exception when duplicate_object then null;
+end $$;

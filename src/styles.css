@@ -6,3 +6,9 @@
 body { margin: 0; min-width: 320px; background: #f4f7f9; }
 button, a { -webkit-tap-highlight-color: transparent; }
 ::selection { background: #13c8de; color: #071826; }
+.finance-shell {
+  background:
+    radial-gradient(circle at 18% 18%, rgba(19, 200, 222, 0.16), transparent 28%),
+    radial-gradient(circle at 82% 10%, rgba(34, 211, 238, 0.10), transparent 24%),
+    linear-gradient(135deg, #071826 0%, #06111f 100%);
+}

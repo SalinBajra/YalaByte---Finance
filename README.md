@@ -1,4 +1,4 @@
-# YalaByte Finance ERP
+# FinByte
 
 Internal finance workspace for YalaByte. The first release includes an executive dashboard, transaction ledger, invoice tracking, expense navigation, payroll, and reporting foundations.
 

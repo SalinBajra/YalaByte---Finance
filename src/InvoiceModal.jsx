@@ -303,7 +303,7 @@ export default function InvoiceModal({ lead, invoice: existingInvoice, currentUs
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/65 p-3 backdrop-blur-sm sm:p-5" role="dialog" aria-modal="true" aria-label="Invoice generator">
       <div className="max-h-[94vh] w-full max-w-5xl overflow-y-auto rounded-2xl bg-white shadow-2xl">
         <div className="sticky top-0 z-10 flex items-center justify-between gap-4 border-b border-slate-200 bg-white/95 px-4 py-4 backdrop-blur sm:px-6">
-          <div><p className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-cyan-700">YalaByte billing</p><h2 className="mt-1 text-xl font-extrabold">{existingInvoice ? 'Invoice details' : 'Create invoice'}</h2></div>
+          <div><p className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-cyan-700">FinByte billing</p><h2 className="mt-1 text-xl font-extrabold">{existingInvoice ? 'Invoice details' : 'Create invoice'}</h2></div>
           <button className="rounded-lg bg-slate-100 px-3 py-2 text-sm font-bold text-slate-600 hover:bg-slate-200" onClick={onClose} type="button">Close</button>
         </div>
 

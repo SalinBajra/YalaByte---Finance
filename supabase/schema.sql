@@ -149,6 +149,7 @@ on public.finance_invoice_events for insert to authenticated
 with check (public.current_user_role() in ('admin', 'finance') and actor_id = auth.uid());
 
 grant select, insert on public.finance_invoice_events to authenticated;
+grant select, insert on public.finance_invoice_events to service_role;
 
 create table if not exists public.finance_invoice_emails (
   id uuid primary key default gen_random_uuid(),
@@ -180,6 +181,7 @@ using (public.current_user_role() in ('admin', 'finance'))
 with check (public.current_user_role() in ('admin', 'finance'));
 
 grant select, insert, update on public.finance_invoice_emails to authenticated;
+grant select, insert, update on public.finance_invoice_emails to service_role;
 
 do $$ begin
   alter publication supabase_realtime add table public.finance_transactions;

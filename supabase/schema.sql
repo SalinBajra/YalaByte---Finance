@@ -152,6 +152,29 @@ with check (public.current_user_role() in ('admin', 'finance') and actor_id = au
 grant select, insert on public.finance_invoice_events to authenticated;
 grant select, insert on public.finance_invoice_events to service_role;
 
+create table if not exists public.finance_invoice_payments (
+  id uuid primary key default gen_random_uuid(),
+  invoice_id text not null references public.finance_invoices(id) on delete cascade,
+  amount_npr numeric(14,2) not null check (amount_npr > 0),
+  payment_method text not null default 'bank_transfer',
+  note text not null default '',
+  received_by uuid not null references public.profiles(id),
+  received_at timestamptz not null default now(),
+  created_at timestamptz not null default now()
+);
+
+alter table public.finance_invoice_payments enable row level security;
+
+create policy "Finance roles can read invoice payments"
+on public.finance_invoice_payments for select to authenticated
+using (public.current_user_role() in ('admin', 'finance'));
+
+create policy "Finance roles can create invoice payments"
+on public.finance_invoice_payments for insert to authenticated
+with check (public.current_user_role() in ('admin', 'finance') and received_by = auth.uid());
+
+grant select, insert on public.finance_invoice_payments to authenticated;
+
 create table if not exists public.finance_invoice_emails (
   id uuid primary key default gen_random_uuid(),
   invoice_id text not null references public.finance_invoices(id) on delete cascade,
@@ -203,6 +226,11 @@ end $$;
 
 do $$ begin
   alter publication supabase_realtime add table public.finance_invoice_events;
+exception when duplicate_object then null;
+end $$;
+
+do $$ begin
+  alter publication supabase_realtime add table public.finance_invoice_payments;
 exception when duplicate_object then null;
 end $$;
 

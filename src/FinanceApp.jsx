@@ -62,6 +62,11 @@ async function functionErrorMessage(error) {
   return error?.message || 'Unknown function error';
 }
 
+const isMissingInvoicePaymentsTable = (error) => {
+  const message = error?.message || '';
+  return message.includes('finance_invoice_payments') || message.includes("schema cache");
+};
+
 const primaryButton = 'rounded-xl bg-cyanbrand-500 px-4 py-3 text-sm font-bold text-ink shadow-[0_12px_30px_rgba(19,200,222,0.22)] transition hover:-translate-y-0.5 hover:bg-cyanbrand-400';
 const panelClass = 'rounded-2xl border border-slate-200 bg-white shadow-sm';
 const invoiceStatusClass = {
@@ -327,14 +332,19 @@ export default function FinanceApp({ profile, signOut }) {
       supabase.from('finance_invoice_payments').select('*').order('received_at', { ascending: false }),
       supabase.from('team_members').select('user_id, name, email, role').order('name', { ascending: true })
     ]).then(([dealResult, invoiceResult, eventResult, paymentResult, teamResult]) => {
-      if (dealResult.error || invoiceResult.error || eventResult.error || paymentResult.error || teamResult.error) {
-        setDataError(dealResult.error?.message || invoiceResult.error?.message || eventResult.error?.message || paymentResult.error?.message || teamResult.error?.message);
+      if (dealResult.error || invoiceResult.error || eventResult.error || teamResult.error) {
+        setDataError(dealResult.error?.message || invoiceResult.error?.message || eventResult.error?.message || teamResult.error?.message);
         return;
       }
       setDeals((dealResult.data || []).map(mapFinanceDeal));
       setInvoices(invoiceResult.data || []);
       setInvoiceEvents(eventResult.data || []);
-      setInvoicePayments(paymentResult.data || []);
+      if (paymentResult.error) {
+        if (!isMissingInvoicePaymentsTable(paymentResult.error)) setDataError(paymentResult.error.message);
+        setInvoicePayments([]);
+      } else {
+        setInvoicePayments(paymentResult.data || []);
+      }
       setTeamMembers(teamResult.data || []);
     });
     const channel = supabase

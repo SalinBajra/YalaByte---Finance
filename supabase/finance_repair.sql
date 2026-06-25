@@ -155,6 +155,40 @@ with check (public.current_user_role() in ('admin', 'finance') and received_by =
 
 grant select, insert on public.finance_invoice_payments to authenticated;
 
+create table if not exists public.finance_payroll_events (
+  id uuid primary key default gen_random_uuid(),
+  transaction_id uuid not null references public.finance_transactions(id) on delete cascade,
+  event_type text not null check (event_type in ('created', 'updated', 'voided')),
+  actor_id uuid not null references public.profiles(id),
+  actor_name text not null default '',
+  actor_email text not null default '',
+  payee_name text not null default '',
+  payroll_detail text not null default '',
+  amount_npr numeric(14,2) not null default 0,
+  note text not null default '',
+  event_data jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+alter table public.finance_payroll_events
+  drop constraint if exists finance_payroll_events_event_type_check,
+  add constraint finance_payroll_events_event_type_check
+    check (event_type in ('created', 'updated', 'voided'));
+
+alter table public.finance_payroll_events enable row level security;
+
+drop policy if exists "Finance roles can read payroll audit events" on public.finance_payroll_events;
+create policy "Finance roles can read payroll audit events"
+on public.finance_payroll_events for select to authenticated
+using (public.current_user_role() in ('admin', 'finance'));
+
+drop policy if exists "Finance roles can create payroll audit events" on public.finance_payroll_events;
+create policy "Finance roles can create payroll audit events"
+on public.finance_payroll_events for insert to authenticated
+with check (public.current_user_role() in ('admin', 'finance') and actor_id = auth.uid());
+
+grant select, insert on public.finance_payroll_events to authenticated;
+
 create table if not exists public.finance_invoice_emails (
   id uuid primary key default gen_random_uuid(),
   invoice_id text not null references public.finance_invoices(id) on delete cascade,
@@ -221,6 +255,11 @@ end $$;
 
 do $$ begin
   alter publication supabase_realtime add table public.finance_invoice_payments;
+exception when duplicate_object then null;
+end $$;
+
+do $$ begin
+  alter publication supabase_realtime add table public.finance_payroll_events;
 exception when duplicate_object then null;
 end $$;
 

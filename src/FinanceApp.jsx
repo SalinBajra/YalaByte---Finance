@@ -67,17 +67,57 @@ function EmptyState({ title, note }) {
 function ProfileMenu({ profile, initials, onSaved, signOut }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState(profile?.full_name || '');
+  const [avatarFile, setAvatarFile] = useState(null);
+  const [preview, setPreview] = useState(profile?.avatar_url || '');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    setName(profile?.full_name || '');
+    setPreview(profile?.avatar_url || '');
+    setAvatarFile(null);
+  }, [profile?.full_name, profile?.avatar_url]);
+
+  useEffect(() => () => {
+    if (preview?.startsWith('blob:')) URL.revokeObjectURL(preview);
+  }, [preview]);
+
+  const chooseAvatar = (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 5 * 1024 * 1024) {
+      setError('Use a JPG, PNG, or WebP image smaller than 5 MB.');
+      return;
+    }
+    setError('');
+    setAvatarFile(file);
+    setPreview(URL.createObjectURL(file));
+  };
+
   const save = async (event) => {
     event.preventDefault();
     setError('');
     setSaving(true);
+    let avatarUrl = profile?.avatar_url || '';
+    if (avatarFile) {
+      const extension = avatarFile.name.split('.').pop()?.toLowerCase() || 'jpg';
+      const objectPath = `${profile.id}/finance-avatar-${Date.now()}.${extension}`;
+      const { error: uploadError } = await supabase.storage
+        .from('team-avatars')
+        .upload(objectPath, avatarFile, { cacheControl: '3600', upsert: false });
+      if (uploadError) {
+        setSaving(false);
+        setError(uploadError.message);
+        return;
+      }
+      const { data } = supabase.storage.from('team-avatars').getPublicUrl(objectPath);
+      avatarUrl = data.publicUrl;
+    }
     const { data, error: updateError } = await supabase
       .from('profiles')
-      .update({ full_name: name.trim(), updated_at: new Date().toISOString() })
+      .update({ full_name: name.trim(), avatar_url: avatarUrl, updated_at: new Date().toISOString() })
       .eq('id', profile.id)
-      .select('id, full_name, email, role')
+      .select('id, full_name, email, avatar_url, role')
       .single();
     setSaving(false);
     if (updateError) {
@@ -87,7 +127,40 @@ function ProfileMenu({ profile, initials, onSaved, signOut }) {
     onSaved(data);
     setOpen(false);
   };
-  return <div className="relative"><button className="grid h-10 w-10 place-items-center rounded-full bg-ink text-xs font-bold text-white shadow-sm ring-2 ring-cyanbrand-100 transition hover:ring-cyanbrand-400" onClick={() => setOpen((value) => !value)} type="button" aria-label="Profile settings" title="Profile settings">{initials}</button>{open ? <div className="absolute right-0 top-12 z-40 w-[min(92vw,360px)] rounded-2xl border border-slate-200 bg-white p-4 shadow-soft"><div className="flex items-center gap-3 border-b border-slate-100 pb-3"><span className="grid h-11 w-11 place-items-center rounded-full bg-ink text-xs font-bold text-cyanbrand-400">{initials}</span><div className="min-w-0"><p className="truncate text-sm font-bold text-ink">{profile?.full_name || profile?.email}</p><p className="truncate text-xs text-slate-500">{profile?.email}</p></div></div><form className="mt-4" onSubmit={save}><label className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">Display name<input className="mt-2 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-medium normal-case tracking-normal outline-none focus:border-cyanbrand-500" value={name} onChange={(event) => setName(event.target.value)} /></label><div className="mt-3 rounded-xl bg-slate-50 px-3 py-2"><p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-400">Access</p><p className="mt-1 text-sm font-semibold capitalize text-ink">{profile?.role}</p></div>{error ? <p className="mt-3 rounded-lg bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">{error}</p> : null}<div className="mt-4 flex items-center justify-between gap-2"><button className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50" onClick={signOut} type="button">Sign out</button><button className="rounded-lg bg-cyanbrand-500 px-3 py-2 text-xs font-bold text-ink hover:bg-cyanbrand-400 disabled:opacity-60" disabled={saving} type="submit">{saving ? 'Saving...' : 'Save profile'}</button></div></form></div> : null}</div>;
+
+  const avatar = preview
+    ? <img className="h-full w-full object-cover" src={preview} alt="Profile" />
+    : initials;
+
+  return (
+    <div className="relative">
+      <button className="grid h-10 w-10 place-items-center overflow-hidden rounded-full bg-ink text-xs font-bold text-white shadow-sm ring-2 ring-cyanbrand-100 transition hover:ring-cyanbrand-400" onClick={() => setOpen((value) => !value)} type="button" aria-label="Profile settings" title="Profile settings">{avatar}</button>
+      {open ? (
+        <div className="absolute right-0 top-12 z-40 w-[min(92vw,390px)] rounded-2xl border border-slate-200 bg-white p-4 shadow-soft">
+          <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
+            <span className="grid h-12 w-12 place-items-center overflow-hidden rounded-full bg-ink text-xs font-bold text-cyanbrand-400">{avatar}</span>
+            <div className="min-w-0">
+              <p className="truncate text-sm font-bold text-ink">{profile?.full_name || profile?.email}</p>
+              <p className="truncate text-xs text-slate-500">{profile?.email}</p>
+            </div>
+          </div>
+          <form className="mt-4" onSubmit={save}>
+            <div className="flex items-center gap-3 rounded-xl bg-slate-50 p-3">
+              <span className="grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-2xl bg-ink text-sm font-bold text-cyanbrand-400">{avatar}</span>
+              <div>
+                <label className="inline-flex cursor-pointer rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 shadow-sm hover:bg-slate-50">Choose DP<input className="hidden" type="file" accept="image/png,image/jpeg,image/webp" onChange={chooseAvatar} /></label>
+                <p className="mt-1 text-xs leading-5 text-slate-400">JPG, PNG, or WebP under 5 MB.</p>
+              </div>
+            </div>
+            <label className="mt-4 block text-xs font-bold uppercase tracking-[0.12em] text-slate-500">Display name<input className="mt-2 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-medium normal-case tracking-normal outline-none focus:border-cyanbrand-500" value={name} onChange={(event) => setName(event.target.value)} /></label>
+            <div className="mt-3 rounded-xl bg-slate-50 px-3 py-2"><p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-400">Access</p><p className="mt-1 text-sm font-semibold capitalize text-ink">{profile?.role}</p></div>
+            {error ? <p className="mt-3 rounded-lg bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">{error}</p> : null}
+            <div className="mt-4 flex items-center justify-between gap-2"><button className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50" onClick={signOut} type="button">Sign out</button><button className="rounded-lg bg-cyanbrand-500 px-3 py-2 text-xs font-bold text-ink hover:bg-cyanbrand-400 disabled:opacity-60" disabled={saving} type="submit">{saving ? 'Saving...' : 'Save profile'}</button></div>
+          </form>
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 function Overview({ transactions, invoices, onNavigate, name }) {

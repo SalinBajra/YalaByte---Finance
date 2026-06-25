@@ -5,6 +5,7 @@ create table public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   email text not null unique check (lower(email) like '%@yalabyte.com'),
   full_name text,
+  avatar_url text,
   role public.app_role not null default 'member',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()

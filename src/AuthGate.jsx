@@ -28,7 +28,7 @@ export default function AuthGate({ children }) {
 
   const loadAccess = async (session) => {
     if (!session) { setWorkspaceReady(false); setState({ loading: false, session: null, profile: null }); return; }
-    const { data: profile, error: profileError } = await supabase.from('profiles').select('id, full_name, email, role').eq('id', session.user.id).single();
+    const { data: profile, error: profileError } = await supabase.from('profiles').select('id, full_name, email, avatar_url, role').eq('id', session.user.id).single();
     if (profileError || !ALLOWED_ROLES.includes(profile?.role)) {
       await supabase.auth.signOut();
       setError('Your YalaByte account has not been assigned Finance access. Ask an administrator to assign the Admin or Finance role in CRM.');

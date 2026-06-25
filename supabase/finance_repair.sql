@@ -1,21 +1,61 @@
 -- Safe to run more than once in the shared Supabase project.
 -- Repairs Finance table privileges and syncs Finance access from CRM team roles.
 
-insert into public.profiles (id, email, full_name, role)
+alter table public.profiles
+  add column if not exists avatar_url text;
+
+alter table public.team_members
+  add column if not exists avatar_url text not null default '';
+
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('team-avatars', 'team-avatars', true, 5242880, array['image/jpeg', 'image/png', 'image/webp'])
+on conflict (id) do update set
+  public = excluded.public,
+  file_size_limit = excluded.file_size_limit,
+  allowed_mime_types = excluded.allowed_mime_types;
+
+drop policy if exists "Public can view team avatars" on storage.objects;
+create policy "Public can view team avatars"
+on storage.objects for select
+using (bucket_id = 'team-avatars');
+
+drop policy if exists "Team can upload own avatar" on storage.objects;
+create policy "Team can upload own avatar"
+on storage.objects for insert to authenticated
+with check (
+  bucket_id = 'team-avatars'
+  and (storage.foldername(name))[1] = auth.uid()::text
+  and lower(coalesce(auth.jwt() ->> 'email', '')) like '%@yalabyte.com'
+);
+
+drop policy if exists "Team can update own avatar" on storage.objects;
+create policy "Team can update own avatar"
+on storage.objects for update to authenticated
+using (bucket_id = 'team-avatars' and (storage.foldername(name))[1] = auth.uid()::text)
+with check (bucket_id = 'team-avatars' and (storage.foldername(name))[1] = auth.uid()::text);
+
+drop policy if exists "Team can delete own avatar" on storage.objects;
+create policy "Team can delete own avatar"
+on storage.objects for delete to authenticated
+using (bucket_id = 'team-avatars' and (storage.foldername(name))[1] = auth.uid()::text);
+
+insert into public.profiles (id, email, full_name, avatar_url, role)
 select
   user_id,
   lower(email),
   name,
+  avatar_url,
   case when role in ('admin', 'finance') then role else 'member' end::public.app_role
 from public.team_members
 on conflict (id) do update
 set email = excluded.email,
     full_name = excluded.full_name,
+    avatar_url = coalesce(nullif(public.profiles.avatar_url, ''), excluded.avatar_url),
     role = excluded.role,
     updated_at = now();
 
 grant select on public.team_members to authenticated;
-grant update (full_name, updated_at) on public.profiles to authenticated;
+grant update (full_name, avatar_url, updated_at) on public.profiles to authenticated;
 
 drop policy if exists "Users can update their own Finance profile" on public.profiles;
 create policy "Users can update their own Finance profile"

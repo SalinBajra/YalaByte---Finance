@@ -5,7 +5,7 @@ const ALLOWED_ROLES = ['admin', 'finance'];
 const WELCOME_SESSION_KEY = 'yalabyte-finance-welcome-shown';
 
 function Brand({ compact = false, inverted = false }) {
-  return <div className="flex items-center gap-3"><span className={`grid ${compact ? 'h-10 w-10' : 'h-12 w-12'} place-items-center rounded-xl bg-white p-2 shadow-sm`}><img src="/images/yalabyte-yb-logo.png" alt="YalaByte" className="h-full w-full object-contain" /></span><div><p className={`${compact ? 'text-lg' : 'text-xl'} font-bold tracking-tight ${inverted ? 'text-white' : 'text-ink'}`}>FinByte</p><p className={`text-[10px] font-bold uppercase tracking-[0.2em] ${inverted ? 'text-cyanbrand-400' : 'text-cyanbrand-600'}`}>Finance OS</p></div></div>;
+  return <div className="flex items-center gap-3"><span className={`grid ${compact ? 'h-10 w-10' : 'h-12 w-12'} place-items-center rounded-xl bg-white p-2 shadow-sm`}><img src="/images/yalabyte-yb-logo.png" alt="YalaByte" className="h-full w-full object-contain" /></span><div><p className={`${compact ? 'text-lg' : 'text-xl'} font-bold tracking-tight ${inverted ? 'text-white' : 'text-ink'}`}>Yala<span className="text-cyanbrand-500">Byte</span></p><p className={`text-[10px] font-bold uppercase tracking-[0.2em] ${inverted ? 'text-cyanbrand-400' : 'text-cyanbrand-600'}`}>FinByte</p></div></div>;
 }
 
 function FinanceLoader({ profile, compact = false }) {

@@ -186,21 +186,22 @@ function ProfileMenu({ profile, initials, onSaved, signOut }) {
 function Overview({ transactions, invoices, onNavigate, name }) {
   const now = new Date();
   const currentMonth = monthKey(now);
+  const activeTransactions = transactions.filter((item) => item.status !== 'Void');
   const monthNames = useMemo(() => {
     return Array.from({ length: 6 }, (_, index) => {
       const item = new Date(now.getFullYear(), now.getMonth() - 5 + index, 1);
       return { key: monthKey(item), label: item.toLocaleString('en-US', { month: 'short' }) };
     });
   }, []);
-  const totals = useMemo(() => transactions.reduce((sum, item) => ({ ...sum, [item.type]: sum[item.type] + item.amount }), { income: 0, expense: 0 }), [transactions]);
-  const monthRows = transactions.filter((item) => monthKey(item.date) === currentMonth);
+  const totals = useMemo(() => activeTransactions.reduce((sum, item) => ({ ...sum, [item.type]: sum[item.type] + item.amount }), { income: 0, expense: 0 }), [activeTransactions]);
+  const monthRows = activeTransactions.filter((item) => monthKey(item.date) === currentMonth);
   const monthIncome = monthRows.filter((item) => item.type === 'income').reduce((sum, item) => sum + item.amount, 0);
   const monthExpenses = monthRows.filter((item) => item.type === 'expense').reduce((sum, item) => sum + item.amount, 0);
   const openInvoices = invoices.filter((item) => item.status !== 'paid' && item.status !== 'cancelled');
   const receivable = openInvoices.reduce((sum, item) => sum + invoiceBalance(item), 0);
   const cashPosition = totals.income - totals.expense;
   const cashFlow = monthNames.map((month) => {
-    const rows = transactions.filter((item) => monthKey(item.date) === month.key);
+    const rows = activeTransactions.filter((item) => monthKey(item.date) === month.key);
     const income = rows.filter((item) => item.type === 'income').reduce((sum, item) => sum + item.amount, 0);
     const expense = rows.filter((item) => item.type === 'expense').reduce((sum, item) => sum + item.amount, 0);
     return { ...month, income, expense, net: income - expense };
@@ -214,7 +215,7 @@ function Overview({ transactions, invoices, onNavigate, name }) {
       <div className="rounded-2xl border border-slate-200 bg-white p-5"><div className="flex items-center justify-between"><div><h2 className="font-semibold text-ink">Cash flow</h2><p className="mt-1 text-sm text-slate-500">Six-month operating trend</p></div><span className="rounded-lg bg-slate-100 px-3 py-2 text-xs font-bold text-slate-600">{monthNames[0].label} - {monthNames[5].label} {now.getFullYear()}</span></div>{maxFlow ? <><div className="mt-8 flex h-52 items-end gap-3 border-b border-slate-200 px-2">{cashFlow.map((item) => <div key={item.key} className="flex flex-1 items-end justify-center gap-1"><div title={`Income ${money(item.income)}`} className="w-1/2 rounded-t-md bg-cyanbrand-500" style={{height:`${Math.max((item.income / maxFlow) * 100, item.income ? 8 : 0)}%`}}/><div title={`Expenses ${money(item.expense)}`} className="w-1/2 rounded-t-md bg-slate-200" style={{height:`${Math.max((item.expense / maxFlow) * 100, item.expense ? 8 : 0)}%`}}/></div>)}</div><div className="mt-3 grid grid-cols-6 text-center text-xs font-semibold text-slate-400">{cashFlow.map(item => <span key={item.key}>{item.label}</span>)}</div></> : <p className="mt-20 text-center text-sm text-slate-500">No cash movement recorded yet.</p>}</div>
       <div className="rounded-2xl bg-ink p-5 text-white"><p className="text-sm font-semibold text-cyanbrand-400">Operating summary</p><p className="mt-3 text-3xl font-semibold">{money(netThisMonth)}</p><p className="mt-2 text-sm text-slate-400">Net movement this month</p><div className="mt-6 grid grid-cols-2 gap-4 border-t border-white/10 pt-5"><div><p className="text-xs text-slate-400">Income</p><p className="mt-1 font-semibold">{money(monthIncome)}</p></div><div><p className="text-xs text-slate-400">Expenses</p><p className="mt-1 font-semibold">{money(monthExpenses)}</p></div></div><button onClick={() => onNavigate('Expenses')} className="mt-6 w-full rounded-xl border border-white/15 px-4 py-3 text-sm font-bold hover:bg-white/5">Review expenses</button></div>
     </section>
-    <section className="mt-5 rounded-2xl border border-slate-200 bg-white"><div className="flex items-center justify-between border-b border-slate-100 p-5"><div><h2 className="font-semibold text-ink">Recent activity</h2><p className="mt-1 text-sm text-slate-500">Latest money in and out</p></div><button onClick={() => onNavigate('Transactions')} className="text-sm font-bold text-cyanbrand-600">View all</button></div><TransactionTable rows={transactions.slice(0,4)}/></section>
+    <section className="mt-5 rounded-2xl border border-slate-200 bg-white"><div className="flex items-center justify-between border-b border-slate-100 p-5"><div><h2 className="font-semibold text-ink">Recent activity</h2><p className="mt-1 text-sm text-slate-500">Latest money in and out</p></div><button onClick={() => onNavigate('Transactions')} className="text-sm font-bold text-cyanbrand-600">View all</button></div><TransactionTable rows={activeTransactions.slice(0,4)}/></section>
   </>;
 }
 
@@ -272,7 +273,7 @@ function PaymentModal({ invoice, onClose, onSave }) {
 function Expenses({ rows, onAdd, error }) {
   const [form, setForm] = useState({ company: '', purpose: '', category: 'Software', amount: '', note: '' });
   const [saving, setSaving] = useState(false);
-  const expenses = rows.filter((row) => row.type === 'expense');
+  const expenses = rows.filter((row) => row.type === 'expense' && row.status !== 'Void');
   const byCategory = Object.entries(expenses.reduce((result, row) => ({ ...result, [row.category]: (result[row.category] || 0) + row.amount }), {})).sort((a, b) => b[1] - a[1]);
   const total = expenses.reduce((sum, row) => sum + row.amount, 0);
   const submit = async (event) => {
@@ -324,10 +325,11 @@ function Payroll({ rows, teamMembers, onAdd, onUpdate, onDelete, error }) {
 }
 
 function Reports({ rows, invoices }) {
-  const totals = rows.reduce((sum, row) => ({ ...sum, [row.type]: sum[row.type] + row.amount }), { income: 0, expense: 0 });
+  const activeRows = rows.filter((row) => row.status !== 'Void');
+  const totals = activeRows.reduce((sum, row) => ({ ...sum, [row.type]: sum[row.type] + row.amount }), { income: 0, expense: 0 });
   const net = totals.income - totals.expense;
   const receivable = invoices.filter((invoice) => invoice.status !== 'paid' && invoice.status !== 'cancelled').reduce((sum, invoice) => sum + Number(invoice.amount_due_npr || 0), 0);
-  const categories = Object.entries(rows.reduce((result, row) => ({ ...result, [row.category]: (result[row.category] || 0) + (row.type === 'income' ? row.amount : -row.amount) }), {})).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]));
+  const categories = Object.entries(activeRows.reduce((result, row) => ({ ...result, [row.category]: (result[row.category] || 0) + (row.type === 'income' ? row.amount : -row.amount) }), {})).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]));
   return <><h1 className="text-3xl font-semibold tracking-tight text-ink">Reports</h1><p className="mt-2 text-slate-500">A working snapshot of revenue, expenses, net position, and receivables.</p><section className="mt-7 grid gap-4 md:grid-cols-2 xl:grid-cols-4"><Metric label="Income" value={money(totals.income)} note="Posted income" tone="text-emerald-600" /><Metric label="Expenses" value={money(totals.expense)} note="Posted expenses" tone="text-amber-600" /><Metric label="Net" value={money(net)} note={net >= 0 ? 'Positive position' : 'Needs review'} tone={net >= 0 ? 'text-emerald-600' : 'text-rose-600'} /><Metric label="Receivables" value={money(receivable)} note="Open invoice amount" /></section><section className="mt-5 grid gap-5 xl:grid-cols-[1fr_1fr]"><div className="rounded-2xl border border-slate-200 bg-white p-5"><h2 className="font-semibold text-ink">Category movement</h2><div className="mt-5 space-y-3">{categories.length ? categories.slice(0, 8).map(([category, amount]) => <div className="flex items-center justify-between border-b border-slate-100 pb-3 last:border-0" key={category}><span className="font-semibold text-slate-600">{category}</span><span className={`font-bold ${amount >= 0 ? 'text-emerald-600' : 'text-ink'}`}>{amount >= 0 ? '+' : '−'}{money(Math.abs(amount))}</span></div>) : <p className="py-8 text-center text-sm text-slate-500">No report data yet.</p>}</div></div><div className="rounded-2xl border border-slate-200 bg-white p-5"><h2 className="font-semibold text-ink">Billing status</h2><div className="mt-5 space-y-3">{['draft', 'issued', 'paid', 'cancelled'].map((status) => { const matching = invoices.filter((invoice) => invoice.status === status); return <div className="flex items-center justify-between border-b border-slate-100 pb-3 last:border-0" key={status}><span className="capitalize font-semibold text-slate-600">{status}</span><span className="font-bold text-ink">{matching.length}</span></div>; })}</div></div></section></>;
 }
 

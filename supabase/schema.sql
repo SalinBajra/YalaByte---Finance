@@ -52,6 +52,8 @@ on public.finance_transactions for update to authenticated
 using (public.current_user_role() in ('admin', 'finance'))
 with check (public.current_user_role() in ('admin', 'finance'));
 
+grant select, insert, update on public.finance_transactions to authenticated;
+
 create table if not exists public.finance_deals (
   id uuid primary key default gen_random_uuid(),
   crm_lead_id text not null unique,

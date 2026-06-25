@@ -14,6 +14,13 @@ set email = excluded.email,
     role = excluded.role,
     updated_at = now();
 
+grant select on public.team_members to authenticated;
+
+drop policy if exists "Finance roles can read payroll team members" on public.team_members;
+create policy "Finance roles can read payroll team members"
+on public.team_members for select to authenticated
+using (public.current_user_role() in ('admin', 'finance'));
+
 grant select, insert, update on public.finance_transactions to authenticated;
 grant select, insert, update on public.finance_deals to authenticated;
 grant select, insert, update on public.finance_invoices to authenticated;

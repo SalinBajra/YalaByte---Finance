@@ -64,6 +64,32 @@ function EmptyState({ title, note }) {
   return <div className="p-8 text-center"><p className="font-semibold text-ink">{title}</p><p className="mt-1 text-sm text-slate-500">{note}</p></div>;
 }
 
+function ProfileMenu({ profile, initials, onSaved, signOut }) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState(profile?.full_name || '');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const save = async (event) => {
+    event.preventDefault();
+    setError('');
+    setSaving(true);
+    const { data, error: updateError } = await supabase
+      .from('profiles')
+      .update({ full_name: name.trim(), updated_at: new Date().toISOString() })
+      .eq('id', profile.id)
+      .select('id, full_name, email, role')
+      .single();
+    setSaving(false);
+    if (updateError) {
+      setError(updateError.message);
+      return;
+    }
+    onSaved(data);
+    setOpen(false);
+  };
+  return <div className="relative"><button className="grid h-10 w-10 place-items-center rounded-full bg-ink text-xs font-bold text-white shadow-sm ring-2 ring-cyanbrand-100 transition hover:ring-cyanbrand-400" onClick={() => setOpen((value) => !value)} type="button" aria-label="Profile settings" title="Profile settings">{initials}</button>{open ? <div className="absolute right-0 top-12 z-40 w-[min(92vw,360px)] rounded-2xl border border-slate-200 bg-white p-4 shadow-soft"><div className="flex items-center gap-3 border-b border-slate-100 pb-3"><span className="grid h-11 w-11 place-items-center rounded-full bg-ink text-xs font-bold text-cyanbrand-400">{initials}</span><div className="min-w-0"><p className="truncate text-sm font-bold text-ink">{profile?.full_name || profile?.email}</p><p className="truncate text-xs text-slate-500">{profile?.email}</p></div></div><form className="mt-4" onSubmit={save}><label className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">Display name<input className="mt-2 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm font-medium normal-case tracking-normal outline-none focus:border-cyanbrand-500" value={name} onChange={(event) => setName(event.target.value)} /></label><div className="mt-3 rounded-xl bg-slate-50 px-3 py-2"><p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-400">Access</p><p className="mt-1 text-sm font-semibold capitalize text-ink">{profile?.role}</p></div>{error ? <p className="mt-3 rounded-lg bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">{error}</p> : null}<div className="mt-4 flex items-center justify-between gap-2"><button className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50" onClick={signOut} type="button">Sign out</button><button className="rounded-lg bg-cyanbrand-500 px-3 py-2 text-xs font-bold text-ink hover:bg-cyanbrand-400 disabled:opacity-60" disabled={saving} type="submit">{saving ? 'Saving...' : 'Save profile'}</button></div></form></div> : null}</div>;
+}
+
 function Overview({ transactions, invoices, onNavigate, name }) {
   const now = new Date();
   const currentMonth = monthKey(now);
@@ -163,6 +189,7 @@ function Reports({ rows, invoices }) {
 
 export default function FinanceApp({ profile, signOut }) {
   const [page, setPage] = useState('Overview');
+  const [activeProfile, setActiveProfile] = useState(profile);
   const [rows, setRows] = useState([]);
   const [deals, setDeals] = useState([]);
   const [invoices, setInvoices] = useState([]);
@@ -229,7 +256,7 @@ export default function FinanceApp({ profile, signOut }) {
   }, []);
   const addRow = async (form) => {
     setDataError('');
-    const record = { transaction_date: new Date().toISOString().slice(0,10), description: form.description.trim(), party: form.party.trim() || null, category: form.category.trim(), transaction_type: form.type, amount_npr: Number(form.amount), status: 'cleared', created_by: profile.id };
+    const record = { transaction_date: new Date().toISOString().slice(0,10), description: form.description.trim(), party: form.party.trim() || null, category: form.category.trim(), transaction_type: form.type, amount_npr: Number(form.amount), status: 'cleared', created_by: activeProfile.id };
     const { data, error } = await supabase.from('finance_transactions').insert(record).select().single();
     if (error) { setDataError(error.message); return false; }
     setRows(current => [{ id: data.id, date: data.transaction_date, description: data.description, party: data.party, category: data.category, type: data.transaction_type, amount: Number(data.amount_npr), status: 'Cleared' }, ...current]);
@@ -239,9 +266,9 @@ export default function FinanceApp({ profile, signOut }) {
     const eventRecord = {
       invoice_id: invoiceRow.id,
       event_type: eventType,
-      actor_id: profile.id,
-      actor_name: profile?.full_name || '',
-      actor_email: profile?.email || '',
+      actor_id: activeProfile.id,
+      actor_name: activeProfile?.full_name || '',
+      actor_email: activeProfile?.email || '',
       client_name: invoiceClientName(invoiceRow),
       invoice_number: invoiceRow.invoice_number,
       amount_npr: amount,
@@ -291,7 +318,7 @@ export default function FinanceApp({ profile, signOut }) {
       grand_total_npr: Number(invoice.grandTotal || 0),
       due_date: invoice.dueDate || null,
       invoice_data: invoice,
-      created_by: profile.id
+      created_by: activeProfile.id
     };
     const { data, error } = await supabase.from('finance_invoices').upsert(record, { onConflict: 'id' }).select().single();
     if (error) {
@@ -332,7 +359,7 @@ export default function FinanceApp({ profile, signOut }) {
       transaction_type: 'income',
       amount_npr: amount,
       status: 'cleared',
-      created_by: profile.id
+      created_by: activeProfile.id
     };
     const { data, error } = await supabase.from('finance_transactions').insert(transaction).select().single();
     if (error) {
@@ -383,7 +410,7 @@ export default function FinanceApp({ profile, signOut }) {
     const subject = `YalaByte invoice ${invoiceRow.invoice_number}`;
     const body = `Hello ${invoiceRow.invoice_data?.clientName || invoiceClientName(invoiceRow)},\n\nPlease find attached your YalaByte invoice ${invoiceRow.invoice_number}.\n\nAmount due: ${money(Number(invoiceRow.amount_due_npr || 0))}\nDue date: ${invoiceRow.due_date ? date(invoiceRow.due_date) : 'Not set'}`;
     const attachment = await generateInvoicePdfAttachment(invoiceRow.invoice_data);
-    const emailRecord = { invoice_id: invoiceRow.id, to_email: toEmail, cc_email: ownerEmail, subject, body, attachment_filename: attachment.filename, attachment_base64: attachment.base64, created_by: profile.id };
+    const emailRecord = { invoice_id: invoiceRow.id, to_email: toEmail, cc_email: ownerEmail, subject, body, attachment_filename: attachment.filename, attachment_base64: attachment.base64, created_by: activeProfile.id };
     const { data, error } = await supabase.from('finance_invoice_emails').insert(emailRecord).select().single();
     if (error) {
       setDataError(error.message);
@@ -393,9 +420,9 @@ export default function FinanceApp({ profile, signOut }) {
     const { error: sendError } = await supabase.functions.invoke('send-invoice-email', { body: { emailId: data.id } });
     if (sendError) setDataError(`Email queued, but send failed: ${await functionErrorMessage(sendError)}`);
   };
-  const initials = (profile?.full_name || profile?.email || 'YB').split(/\s|@/).filter(Boolean).slice(0,2).map(part=>part[0]).join('').toUpperCase();
-  const firstName = (profile?.full_name || profile?.email || 'Team').split(/\s|@/)[0];
-  const financeUser = { name: profile?.full_name || profile?.email || 'Finance team', email: profile?.email || '' };
+  const initials = (activeProfile?.full_name || activeProfile?.email || 'YB').split(/\s|@/).filter(Boolean).slice(0,2).map(part=>part[0]).join('').toUpperCase();
+  const firstName = (activeProfile?.full_name || activeProfile?.email || 'Team').split(/\s|@/)[0];
+  const financeUser = { name: activeProfile?.full_name || activeProfile?.email || 'Finance team', email: activeProfile?.email || '' };
   const todayLabel = new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric', year: 'numeric' }).format(new Date());
-  return <div className="min-h-screen bg-[#eef4f7] lg:flex"><aside className="fixed inset-y-0 hidden w-64 flex-col bg-ink px-4 py-6 text-white lg:flex"><div className="flex items-center gap-3"><span className="grid h-12 w-12 place-items-center rounded-xl bg-white p-2 shadow-[0_14px_34px_rgba(19,200,222,0.18)]"><img src="/images/yalabyte-yb-logo.png" alt="YalaByte" className="h-full w-full object-contain"/></span><div><p className="font-bold">YalaByte</p><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-cyanbrand-400">Finance ERP</p></div></div><p className="mt-8 px-3 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">Workspace</p><nav className="mt-3 space-y-1">{nav.map(item => <button key={item} onClick={()=>setPage(item)} className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition ${page===item?'bg-cyanbrand-500 text-ink shadow-[0_14px_34px_rgba(19,200,222,0.22)]':'text-slate-300 hover:bg-white/5 hover:text-white'}`}><Icon name={item} active={page===item}/>{item}</button>)}</nav><div className="mt-auto rounded-xl border border-white/10 bg-white/[0.03] p-3"><p className="truncate text-sm font-semibold">{profile?.full_name || profile?.email}</p><p className="mt-1 capitalize text-xs text-cyanbrand-400">{profile?.role}</p><button onClick={signOut} className="mt-3 text-xs font-semibold text-slate-400 hover:text-white">Sign out</button></div></aside><main className="w-full lg:ml-64"><header className="sticky top-0 z-20 flex items-center justify-between border-b border-slate-200 bg-white/90 px-4 py-4 backdrop-blur lg:px-8"><div className="flex gap-2 overflow-x-auto lg:hidden">{nav.map(item=><button key={item} onClick={()=>setPage(item)} className={`whitespace-nowrap rounded-lg px-3 py-2 text-xs font-bold ${page===item?'bg-ink text-white':'bg-white text-slate-600 shadow-sm ring-1 ring-slate-200'}`}>{item}</button>)}</div><div className="ml-auto flex items-center gap-3"><span className="hidden text-sm font-medium text-slate-500 sm:block">{todayLabel}</span><span className="grid h-9 w-9 place-items-center rounded-full bg-ink text-xs font-bold text-white shadow-sm">{initials}</span></div></header><div className="mx-auto max-w-[1500px] p-4 sm:p-6 lg:p-8">{page==='Overview'?<Overview transactions={rows} invoices={invoices} onNavigate={setPage} name={firstName}/>:page==='Transactions'?<Transactions rows={rows} onAdd={addRow} error={dataError}/>:page==='Invoices'?<Invoices deals={deals} invoices={invoices} events={invoiceEvents} onCreate={openInvoiceForDeal} onEdit={editInvoice} onPaymentReceived={markPaymentReceived} onPaymentPending={markPaymentPending} onCancel={cancelInvoice} onQueueEmail={queueInvoiceEmail} error={dataError}/>:page==='Expenses'?<Expenses rows={rows} onAdd={addRow} error={dataError}/>:page==='Payroll'?<Payroll rows={rows} teamMembers={teamMembers} onAdd={addRow} error={dataError}/>:page==='Reports'?<Reports rows={rows} invoices={invoices}/>:null}</div>{invoiceModal ? <InvoiceModal currentUser={financeUser} invoice={invoiceModal.invoice} lead={invoiceModal.deal} onClose={() => setInvoiceModal(null)} onSaved={saveInvoice} /> : null}</main></div>;
+  return <div className="min-h-screen bg-[#eef4f7] lg:flex"><aside className="fixed inset-y-0 hidden w-64 flex-col bg-ink px-4 py-6 text-white lg:flex"><div className="flex items-center gap-3"><span className="grid h-12 w-12 place-items-center rounded-xl bg-white p-2 shadow-[0_14px_34px_rgba(19,200,222,0.18)]"><img src="/images/yalabyte-yb-logo.png" alt="YalaByte" className="h-full w-full object-contain"/></span><div><p className="font-bold">YalaByte</p><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-cyanbrand-400">Finance ERP</p></div></div><p className="mt-8 px-3 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">Workspace</p><nav className="mt-3 space-y-1">{nav.map(item => <button key={item} onClick={()=>setPage(item)} className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition ${page===item?'bg-cyanbrand-500 text-ink shadow-[0_14px_34px_rgba(19,200,222,0.22)]':'text-slate-300 hover:bg-white/5 hover:text-white'}`}><Icon name={item} active={page===item}/>{item}</button>)}</nav><div className="mt-auto rounded-xl border border-white/10 bg-white/[0.03] p-3"><p className="truncate text-sm font-semibold">{activeProfile?.full_name || activeProfile?.email}</p><p className="mt-1 capitalize text-xs text-cyanbrand-400">{activeProfile?.role}</p><button onClick={signOut} className="mt-3 text-xs font-semibold text-slate-400 hover:text-white">Sign out</button></div></aside><main className="w-full lg:ml-64"><header className="sticky top-0 z-20 flex items-center justify-between border-b border-slate-200 bg-white/90 px-4 py-3 backdrop-blur lg:px-8"><div className="flex min-w-0 items-center gap-3"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white p-2 shadow-sm ring-1 ring-slate-200 lg:hidden"><img src="/images/yalabyte-yb-logo.png" alt="YalaByte" className="h-full w-full object-contain"/></span><div className="hidden min-w-0 lg:block"><p className="text-xs font-bold uppercase tracking-[0.16em] text-cyanbrand-600">YalaByte Finance</p><p className="mt-0.5 text-sm font-medium text-slate-500">{todayLabel}</p></div><div className="flex gap-2 overflow-x-auto lg:hidden">{nav.map(item=><button key={item} onClick={()=>setPage(item)} className={`whitespace-nowrap rounded-lg px-3 py-2 text-xs font-bold ${page===item?'bg-ink text-white':'bg-white text-slate-600 shadow-sm ring-1 ring-slate-200'}`}>{item}</button>)}</div></div><div className="ml-auto flex items-center gap-3"><div className="hidden text-right sm:block"><p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-400">Welcome back</p><p className="text-sm font-extrabold text-ink">{firstName}</p></div><ProfileMenu profile={activeProfile} initials={initials} onSaved={setActiveProfile} signOut={signOut} /></div></header><div className="mx-auto max-w-[1500px] p-4 sm:p-6 lg:p-8">{page==='Overview'?<Overview transactions={rows} invoices={invoices} onNavigate={setPage} name={firstName}/>:page==='Transactions'?<Transactions rows={rows} onAdd={addRow} error={dataError}/>:page==='Invoices'?<Invoices deals={deals} invoices={invoices} events={invoiceEvents} onCreate={openInvoiceForDeal} onEdit={editInvoice} onPaymentReceived={markPaymentReceived} onPaymentPending={markPaymentPending} onCancel={cancelInvoice} onQueueEmail={queueInvoiceEmail} error={dataError}/>:page==='Expenses'?<Expenses rows={rows} onAdd={addRow} error={dataError}/>:page==='Payroll'?<Payroll rows={rows} teamMembers={teamMembers} onAdd={addRow} error={dataError}/>:page==='Reports'?<Reports rows={rows} invoices={invoices}/>:null}</div>{invoiceModal ? <InvoiceModal currentUser={financeUser} invoice={invoiceModal.invoice} lead={invoiceModal.deal} onClose={() => setInvoiceModal(null)} onSaved={saveInvoice} /> : null}</main></div>;
 }

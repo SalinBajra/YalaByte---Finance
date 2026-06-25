@@ -15,6 +15,13 @@ set email = excluded.email,
     updated_at = now();
 
 grant select on public.team_members to authenticated;
+grant update (full_name, updated_at) on public.profiles to authenticated;
+
+drop policy if exists "Users can update their own Finance profile" on public.profiles;
+create policy "Users can update their own Finance profile"
+on public.profiles for update to authenticated
+using (id = auth.uid())
+with check (id = auth.uid());
 
 drop policy if exists "Finance roles can read payroll team members" on public.team_members;
 create policy "Finance roles can read payroll team members"
